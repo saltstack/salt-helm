@@ -6,7 +6,7 @@ Helm charts for deploying different flavours of Salt images to Kubernetes.
 
 | Chart | Description |
 | --- | --- |
-| [salt-minion-kubernetes](salt-minion-kubernetes) | Installs RBAC and an optional Salt minion Deployment for running CIS Kubernetes compliance assessments via kube-bench on-demand Jobs. Supports in-cluster (minion runs as a pod) and external (RBAC only) modes. |
+| [salt-minion-kubernetes](salt-minion-kubernetes) | Installs Salt Minion and RBAC. Has built-in support to run CIS Kubernetes compliance assessments via kube-bench on-demand Jobs. Supports in-cluster (minion runs as a pod) and external (RBAC only) modes. |
 
 ## Usage
 
