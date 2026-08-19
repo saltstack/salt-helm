@@ -1,0 +1,14 @@
+# OS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.bak
+*.tmp
+*~
+
+# Helm
+*.tgz
+Chart.lock

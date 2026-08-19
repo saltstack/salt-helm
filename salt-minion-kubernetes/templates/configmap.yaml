@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: salt-minion-kubernetes-pillar
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: salt-minion-kubernetes
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+data:
+  kube_bench.sls: |
+    kube_bench:
+      namespace: {{ .Values.kubeBench.namespace }}
+      label: {{ .Values.kubeBench.jobLabel }}
+      cronjob_name: {{ .Values.kubeBench.cronJobName }}
+      ttl_seconds: {{ .Values.pillar.ttlSeconds }}
+      job_timeout: {{ .Values.pillar.jobTimeout }}
+      collection_strategy: {{ .Values.pillar.collectionStrategy }}
+      auth_mode: {{ .Values.pillar.authMode }}
+      cache_path: {{ .Values.pillar.cachePath }}

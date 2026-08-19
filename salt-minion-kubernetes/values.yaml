@@ -1,0 +1,86 @@
+# Namespace where all salt-minion-kubernetes objects are deployed.
+# Must match the namespace used in kube-bench-job.
+namespace: kube-system
+
+agent:
+  # Deployment mode:
+  #   in_cluster — deploy the Salt minion as a Kubernetes Deployment (default)
+  #   external   — create RBAC only; the minion runs outside the cluster
+  authMode: in_cluster
+
+  # ── in_cluster mode settings ──────────────────────────────────────────────
+  image:
+    repository: saltstack/salt
+    tag: "3007.1"
+    pullPolicy: IfNotPresent
+  kubectl:
+    # Pinned kubectl version downloaded by the init container.
+    version: "v1.30.2"
+    # Image used in the init container to run curl.
+    initImage: "curlimages/curl:8.7.1"
+  replicas: 1
+  # Salt master address. Required when authMode=in_cluster.
+  saltMasterHost: ""
+  saltMasterPort: 4506
+  minion:
+    # Salt minion ID. Leave empty to use the pod hostname.
+    id: ""
+    # Additional grains injected via the minion config ConfigMap.
+    grains: {}
+
+  # Persists the minion's generated keypair (/etc/salt/pki) across pod
+  # restarts. Without this, a fresh keypair is generated every time the
+  # pod restarts (the directory only exists in the container's writable
+  # layer), and the salt-master rejects it as a mismatch against whatever
+  # key it already has on file for this same minion ID -- requiring a
+  # manual `salt-key -d`/`-a` cycle every time.
+  persistence:
+    enabled: false
+    # "pvc" (default; use when the cluster has a StorageClass, e.g. real
+    # customer clusters) or "hostPath" (for clusters with no dynamic
+    # provisioner, e.g. bare kubeadm test labs -- ties the data to
+    # whichever node it's written on, so pair it with nodeSelector below).
+    type: pvc
+    pvc:
+      # Set to reuse an existing PVC instead of having this chart create one.
+      existingClaim: ""
+      # Empty uses the cluster's default StorageClass.
+      storageClassName: ""
+      accessMode: ReadWriteOnce
+      size: 1Gi
+    hostPath:
+      path: /var/lib/salt-minion-kubernetes/pki
+
+  # Only relevant when persistence.type=hostPath: pins the pod to the node
+  # whose disk holds the persisted keypair, e.g. {kubernetes.io/hostname: k8s-cp}.
+  # `kubectl get nodes` for hostnames.
+  nodeSelector: {}
+
+serviceAccount:
+  name: salt-minion-kubernetes
+  # Add EKS IRSA or other provider-specific annotations here.
+  annotations: {}
+
+rbac:
+  # Set to false if you manage RBAC externally.
+  create: true
+  roleName: salt-minion-kubernetes
+
+# kube-bench coordination settings — must match kube-bench-job chart values.
+kubeBench:
+  namespace: kube-system
+  # Must match cronJob.name in the kube-bench-job chart.
+  cronJobName: kube-bench
+  # Label applied to assessment Jobs and their pods for tracking.
+  jobLabel: app=kube-bench-assessment
+
+# Pillar values injected into the salt-minion-kubernetes-pillar ConfigMap.
+# The ConfigMap is mounted as /srv/pillar/kube_bench.sls inside the minion pod.
+# External minions can also point pillar_roots at a copy of this ConfigMap via a
+# hostPath or projected volume.
+pillar:
+  ttlSeconds: 900
+  jobTimeout: 600
+  collectionStrategy: job
+  authMode: in_cluster
+  cachePath: /var/log/kube-bench.json
