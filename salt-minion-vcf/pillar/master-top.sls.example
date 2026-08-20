@@ -1,0 +1,25 @@
+# Example top.sls for the CUSTOMER'S SALT MASTER (not this container).
+#
+# Jobs dispatched from the Master (e.g. `salt '<minion-id>' vcf_vcenter_vm.list`)
+# are compiled using the Master's own pillar_roots - a pillar file mounted
+# into this container is invisible to them. If VCF operations will be
+# triggered from the Master/RaaS rather than via `salt-call --local` inside
+# the container, the Master admin needs pillar data like this instead,
+# under the Master's own pillar_roots (e.g. /srv/pillar), targeted by this
+# Minion's ID:
+#
+#   base:
+#     'vcf-docker-executor-01':
+#       - vcenter
+#     'salt-minion-vcf-0':
+#       - vcenter
+#       - nsx
+#
+# Each referenced file (e.g. /srv/pillar/vcenter.sls) uses the exact same
+# saltext.vcf:<target> structure as pillar/vcenter.sls.example in this repo.
+#
+# Prefer an ext_pillar backed by a secrets manager (e.g. Vault) over plain
+# files in /srv/pillar for production credentials.
+base:
+  'vcf-docker-executor-01':
+    - vcenter

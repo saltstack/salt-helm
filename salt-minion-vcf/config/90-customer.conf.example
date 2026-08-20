@@ -1,0 +1,7 @@
+# Optional extra Salt Minion configuration.
+#
+# Do not commit VCF credentials here.
+# Prefer Salt Pillar or another secure control-plane secret mechanism.
+#
+# Example hardening options:
+# verify_master_pubkey_sign: true

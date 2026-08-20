@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: salt-minion-vcf-config
+data:
+  10-master.conf: |
+    master: salt-master.example.com
+    master_port: 4506
+    publish_port: 4505
+    master_tries: -1
+    retry_dns: 30
+
+    # Recommended for production after obtaining the trusted master fingerprint:
+    # master_finger: 'AA:BB:CC:DD:...'

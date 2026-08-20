@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: salt-minion-vcf
+spec:
+  serviceName: salt-minion-vcf
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: salt-minion-vcf
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: salt-minion-vcf
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        runAsGroup: 10000
+        fsGroup: 10000
+      containers:
+        - name: minion
+          image: salt-minion-vcf:0.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DEPLOYMENT_TYPE
+              value: kubernetes
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SALT_LOG_LEVEL
+              value: info
+            # Vault integration (saltext.vault) - see README.md "Vault
+            # Integration". Uncomment to enable; unset VAULT_ADDR disables it.
+            # - name: SALT_FILE_CLIENT_LOCAL
+            #   value: "true"
+            # - name: VAULT_ADDR
+            #   value: https://vault.example.com:8200
+            # - name: VAULT_AUTH_METHOD
+            #   value: approle
+            # - name: VAULT_ROLE_ID
+            #   value: <role-id>
+            # - name: VAULT_SECRET_ID_FILE
+            #   value: /var/run/secrets/vault/secret_id
+          volumeMounts:
+            - name: master-config
+              mountPath: /etc/salt/minion.d/10-master.conf
+              subPath: 10-master.conf
+              readOnly: true
+            - name: pki
+              mountPath: /etc/salt/pki/minion
+            # Optional local pillar for saltext.vcf credentials (see
+            # pillar/*.sls.example in this repo). The referenced Secret must
+            # include a top.sls key alongside e.g. vcenter.sls - see
+            # pillar/master-top.sls.example for the format (match '*', this
+            # Pod only ever runs one Minion ID). Uncomment and create the
+            # Secret out-of-band; never a ConfigMap - these are credentials.
+            # To update without restarting the Pod, update the Secret object
+            # itself - kubelet re-syncs mounted Secret volumes automatically.
+            # - name: pillar
+            #   mountPath: /etc/salt/pillar
+            #   readOnly: true
+            # - name: vault-secret
+            #   mountPath: /var/run/secrets/vault
+            #   readOnly: true
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - salt-call --local --retcode-passthrough test.ping >/dev/null
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - salt-call --retcode-passthrough status.master >/dev/null
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: master-config
+          configMap:
+            name: salt-minion-vcf-config
+        # - name: pillar
+        #   secret:
+        #     secretName: salt-minion-vcf-pillar
+        # - name: vault-secret
+        #   secret:
+        #     secretName: salt-minion-vcf-vault
+  volumeClaimTemplates:
+    - metadata:
+        name: pki
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 256Mi

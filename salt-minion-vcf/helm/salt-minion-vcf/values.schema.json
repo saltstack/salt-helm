@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        },
+        "pullSecrets": { "type": "array" }
+      },
+      "required": ["repository", "tag"]
+    },
+    "workload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["StatefulSet", "Deployment"]
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": ["kind", "replicas"]
+    },
+    "salt": {
+      "type": "object",
+      "properties": {
+        "master": {
+          "type": "string",
+          "minLength": 1
+        },
+        "masterPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "publishPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "masterFinger": { "type": "string" },
+        "logLevel": {
+          "type": "string",
+          "enum": ["error", "warning", "info", "debug", "trace"]
+        },
+        "minionId": { "type": "string" },
+        "masterTries": { "type": "integer" },
+        "retryDns": { "type": "integer", "minimum": 0 },
+        "extraMinionConfig": { "type": "object" },
+        "fileClientLocal": { "type": "boolean" }
+      },
+      "required": ["master", "masterPort", "publishPort"]
+    },
+    "vault": {
+      "type": "object",
+      "properties": {
+        "addr": { "type": "string" },
+        "authMethod": { "type": "string", "enum": ["approle", "token"] },
+        "roleId": { "type": "string" },
+        "sdbProfile": { "type": "string" },
+        "secretName": { "type": "string" }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "storageClass": { "type": "string" },
+        "accessModes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "size": { "type": "string", "minLength": 1 },
+        "annotations": { "type": "object" }
+      },
+      "required": ["enabled"]
+    },
+    "pillar": {
+      "type": "object",
+      "properties": {
+        "secretName": { "type": "string" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "requests": { "type": "object" },
+        "limits": { "type": "object" }
+      }
+    },
+    "podSecurityContext": { "type": "object" },
+    "containerSecurityContext": { "type": "object" },
+    "livenessProbe": { "type": "object" },
+    "readinessProbe": { "type": "object" },
+    "nodeSelector": { "type": "object" },
+    "tolerations": { "type": "array" },
+    "affinity": { "type": "object" },
+    "podAnnotations": { "type": "object" },
+    "podLabels": { "type": "object" },
+    "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["image", "workload", "salt", "persistence"]
+}

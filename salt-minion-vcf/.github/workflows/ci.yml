@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-dockerfiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: hadolint (minion Dockerfile)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+      - name: hadolint (dev-master Dockerfile)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: docker/dev-master/Dockerfile
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: helm lint
+        run: helm lint helm/salt-minion-vcf
+      - name: helm template (StatefulSet, default)
+        run: helm template test helm/salt-minion-vcf --set salt.master=salt-master.example.com
+      - name: helm template (Deployment, single replica)
+        run: |
+          helm template test helm/salt-minion-vcf \
+            --set salt.master=salt-master.example.com \
+            --set workload.kind=Deployment \
+            --set workload.replicas=1
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build minion image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: salt-minion-vcf:ci

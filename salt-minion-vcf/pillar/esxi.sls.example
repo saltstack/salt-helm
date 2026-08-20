@@ -1,0 +1,13 @@
+# saltext.vcf credentials for standalone/unmanaged ESXi hosts only
+# (hosts already joined to a vCenter use the vcenter.sls.example block
+# instead - the REST session API is blocked on managed hosts).
+#
+# Copy to esxi.sls (gitignored) and push it in with:
+#   ./scripts/pillar-push.sh <container> pillar/esxi.sls
+# or mount the pillar/ directory at container start - see README.md.
+saltext.vcf:
+  esxi:
+    host: esxi-test.example.com
+    username: root
+    password: secret
+    verify_ssl: false

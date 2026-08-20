@@ -1,0 +1,11 @@
+# saltext.vcf NSX Policy API credentials.
+#
+# Copy to nsx.sls (gitignored) and push it in with:
+#   ./scripts/pillar-push.sh <container> pillar/nsx.sls
+# or mount the pillar/ directory at container start - see README.md.
+saltext.vcf:
+  nsx:
+    host: mgmt-nsx.example.test
+    username: admin
+    password: secret
+    verify_ssl: false
