@@ -1,0 +1,12 @@
+# saltext.vcf credentials for VCF Operations (suite-api).
+#
+# Copy to vcf_ops.sls (gitignored) and push it in with:
+#   ./scripts/pillar-push.sh <container> pillar/vcf_ops.sls
+# or mount the pillar/ directory at container start - see README.md.
+saltext.vcf:
+  vcf_ops:
+    host: ops.example.test
+    username: admin
+    password: secret
+    auth_source: LOCAL         # optional; default LOCAL
+    verify_ssl: false

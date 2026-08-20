@@ -1,0 +1,167 @@
+{{- if eq .Values.workload.kind "StatefulSet" }}
+{{- if and .Values.salt.minionId (gt (int .Values.workload.replicas) 1) }}
+{{- fail "salt.minionId cannot be shared by multiple StatefulSet replicas. Leave it empty to use stable Pod names." }}
+{{- end }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "salt-minion-vcf.fullname" . }}
+  labels:
+    {{- include "salt-minion-vcf.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "salt-minion-vcf.fullname" . }}
+  replicas: {{ .Values.workload.replicas }}
+  selector:
+    matchLabels:
+      {{- include "salt-minion-vcf.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "salt-minion-vcf.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: minion
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: DEPLOYMENT_TYPE
+              value: kubernetes
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SALT_LOG_LEVEL
+              value: {{ .Values.salt.logLevel | quote }}
+            {{- if .Values.salt.minionId }}
+            - name: SALT_MINION_ID
+              value: {{ .Values.salt.minionId | quote }}
+            {{- end }}
+            - name: SALT_FILE_CLIENT_LOCAL
+              value: {{ .Values.salt.fileClientLocal | quote }}
+            {{- if .Values.vault.addr }}
+            - name: VAULT_ADDR
+              value: {{ .Values.vault.addr | quote }}
+            - name: VAULT_AUTH_METHOD
+              value: {{ .Values.vault.authMethod | quote }}
+            - name: VAULT_ROLE_ID
+              value: {{ .Values.vault.roleId | quote }}
+            - name: VAULT_SDB_PROFILE
+              value: {{ .Values.vault.sdbProfile | quote }}
+            {{- if .Values.vault.secretName }}
+            - name: VAULT_SECRET_ID_FILE
+              value: /var/run/secrets/vault/secret_id
+            - name: VAULT_TOKEN_FILE
+              value: /var/run/secrets/vault/token
+            {{- end }}
+            {{- end }}
+          volumeMounts:
+            - name: master-config
+              mountPath: /etc/salt/minion.d/10-master.conf
+              subPath: 10-master.conf
+              readOnly: true
+            - name: pki
+              mountPath: /etc/salt/pki/minion
+            {{- if .Values.pillar.secretName }}
+            - name: pillar
+              mountPath: /etc/salt/pillar
+              readOnly: true
+            {{- end }}
+            {{- if .Values.vault.secretName }}
+            - name: vault-secret
+              mountPath: /var/run/secrets/vault
+              readOnly: true
+            {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - salt-call --local --retcode-passthrough test.ping >/dev/null
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - salt-call --retcode-passthrough status.master >/dev/null
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: master-config
+          configMap:
+            name: {{ include "salt-minion-vcf.fullname" . }}-config
+        {{- if not .Values.persistence.enabled }}
+        - name: pki
+          emptyDir: {}
+        {{- end }}
+        {{- if .Values.pillar.secretName }}
+        - name: pillar
+          secret:
+            secretName: {{ .Values.pillar.secretName }}
+        {{- end }}
+        {{- if .Values.vault.secretName }}
+        - name: vault-secret
+          secret:
+            secretName: {{ .Values.vault.secretName }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: pki
+        {{- with .Values.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}
+{{- end }}

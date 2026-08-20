@@ -1,0 +1,16 @@
+# saltext.vcf vCenter credentials (REST + SOAP/pyVmomi share this block).
+#
+# Copy to vcenter.sls (gitignored) and push it in with:
+#   ./scripts/pillar-push.sh <container> pillar/vcenter.sls
+# or mount the pillar/ directory at container start - see README.md.
+#
+# Never commit the real file. Never put these values in a Kubernetes
+# ConfigMap - use a Secret.
+saltext.vcf:
+  vcenter:
+    host: mgmt-vc.example.test
+    username: administrator@vsphere.local
+    password: secret
+    verify_ssl: false
+    # Optional. Default 30s; bump for long-running calls like OVF deploy.
+    timeout: 1800

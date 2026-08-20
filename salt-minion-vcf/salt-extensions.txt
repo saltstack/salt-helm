@@ -1,0 +1,15 @@
+# Salt extension packages installed into the Salt onedir Python environment.
+# Add/remove/pin any pip-installable Salt extension here.
+#
+# Examples:
+# saltext.example==1.2.3
+# git+https://github.com/example/saltext-example.git@v1.2.3
+#
+# Default extension for this project:
+# Source: https://github.com/salt-extensions/saltext-vcf
+saltext.vcf[all]==1.0.0
+
+# Vault integration (ext_pillar, sdb driver, execution modules) - see
+# README.md "Vault Integration" section.
+# Source: https://github.com/salt-extensions/saltext-vault
+saltext.vault==1.8.0

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "salt-minion-vcf.fullname" . }}-config
+  labels:
+    {{- include "salt-minion-vcf.labels" . | nindent 4 }}
+data:
+  10-master.conf: |
+    master: {{ .Values.salt.master | quote }}
+    master_port: {{ .Values.salt.masterPort }}
+    publish_port: {{ .Values.salt.publishPort }}
+    master_tries: {{ .Values.salt.masterTries }}
+    retry_dns: {{ .Values.salt.retryDns }}
+    {{- if .Values.salt.masterFinger }}
+    master_finger: {{ .Values.salt.masterFinger | quote }}
+    {{- end }}
+    {{- with .Values.salt.extraMinionConfig }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}

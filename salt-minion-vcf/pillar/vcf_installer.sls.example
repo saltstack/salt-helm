@@ -1,0 +1,12 @@
+# saltext.vcf credentials for the VCF Installer (Day-0 bringup appliance,
+# formerly Cloud Builder).
+#
+# Copy to vcf_installer.sls (gitignored) and push it in with:
+#   ./scripts/pillar-push.sh <container> pillar/vcf_installer.sls
+# or mount the pillar/ directory at container start - see README.md.
+saltext.vcf:
+  vcf_installer:
+    host: installer.example.test
+    username: admin@local
+    password: secret
+    verify_ssl: false

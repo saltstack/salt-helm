@@ -1,0 +1,11 @@
+# saltext.vcf SDDC Manager credentials.
+#
+# Copy to sddc_manager.sls (gitignored) and push it in with:
+#   ./scripts/pillar-push.sh <container> pillar/sddc_manager.sls
+# or mount the pillar/ directory at container start - see README.md.
+saltext.vcf:
+  sddc_manager:
+    host: sddc-manager.example.test
+    username: administrator@vsphere.local
+    password: secret
+    verify_ssl: false

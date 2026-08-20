@@ -1,0 +1,112 @@
+image:
+  repository: salt-minion-vcf
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+workload:
+  # StatefulSet is recommended because Salt Minion identity and PKI are stateful.
+  # Deployment is supported for a singleton Minion with a persistent PVC.
+  kind: StatefulSet
+  replicas: 1
+
+salt:
+  master: salt-master.example.com
+  masterPort: 4506
+  publishPort: 4505
+  masterFinger: ""
+  logLevel: info
+
+  # StatefulSet:
+  # Leave empty to use the stable Pod name (e.g. release-salt-minion-vcf-0).
+  #
+  # Deployment:
+  # Leave empty to use the stable Helm resource name.
+  minionId: ""
+
+  masterTries: -1
+  retryDns: 30
+
+  extraMinionConfig: {}
+  # Example:
+  # extraMinionConfig:
+  #   verify_master_pubkey_sign: true
+
+  # Opt-in: makes ALL pillar compiles (including jobs dispatched from a real
+  # Salt Master) resolve from this Pod's own pillar_roots instead of asking
+  # the Master. Unverified beyond basic testing - see README.md
+  # "Vault Integration" before relying on this for production RaaS jobs.
+  fileClientLocal: false
+
+vault:
+  # Vault integration (saltext.vault) - disabled unless addr is set.
+  addr: ""
+  authMethod: approle
+  roleId: ""
+  sdbProfile: vault_sdb
+  # Name of an EXISTING Secret (created out-of-band, never via Helm values)
+  # containing the AppRole secret_id as key 'secret_id', or a Vault token as
+  # key 'token' (matching authMethod). Leave empty to disable.
+  secretName: ""
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 256Mi
+  annotations: {}
+
+pillar:
+  # Name of an EXISTING Kubernetes Secret (created out-of-band, never via
+  # Helm values) containing saltext.vcf credentials. Must include a top.sls
+  # key alongside e.g. vcenter.sls - see pillar/*.sls.example and
+  # pillar/master-top.sls.example in this repo for the exact format. Leave
+  # empty to disable. To update without restarting the Pod, update the
+  # Secret object itself - kubelet re-syncs mounted Secret volumes
+  # automatically.
+  secretName: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10000
+  runAsGroup: 10000
+  fsGroup: 10000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 20
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 20
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podLabels: {}
+
+terminationGracePeriodSeconds: 30

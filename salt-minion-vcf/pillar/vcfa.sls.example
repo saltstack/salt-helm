@@ -1,0 +1,13 @@
+# saltext.vcf credentials for VCF Automation (VCFA / Aria Automation).
+#
+# Copy to vcfa.sls (gitignored) and push it in with:
+#   ./scripts/pillar-push.sh <container> pillar/vcfa.sls
+# or mount the pillar/ directory at container start - see README.md.
+saltext.vcf:
+  vcfa:
+    host: automation.vcf.example.com
+    username: configadmin
+    password: secret
+    domain: System Domain     # optional; default "System Domain"
+    verify_ssl: false
+    timeout: 60                # optional

@@ -1,0 +1,95 @@
+services:
+  salt-minion-vcf:
+    build:
+      context: .
+      args:
+        SALT_VERSION: "${SALT_VERSION:-3008.2}"
+        EXTRA_SALT_EXTENSIONS: "${EXTRA_SALT_EXTENSIONS:-}"
+        PIP_INDEX_URL: "${PIP_INDEX_URL:-}"
+        PIP_TRUSTED_HOST: "${PIP_TRUSTED_HOST:-}"
+        PIP_ONLY_BINARY: "${PIP_ONLY_BINARY:-}"
+        APT_MIRROR: "${APT_MIRROR:-}"
+        # Fallbacks below must match the Dockerfile's own ARG defaults: an
+        # explicit empty string here would override (blank out) those
+        # defaults, unlike leaving the build arg unset entirely.
+        SALT_GPG_KEY_URL: "${SALT_GPG_KEY_URL:-https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public}"
+        SALT_APT_REPO_URL: "${SALT_APT_REPO_URL:-https://packages.broadcom.com/artifactory/saltproject-deb}"
+    image: "${IMAGE_REPOSITORY:-salt-minion-vcf}:${IMAGE_TAG:-0.1.0}"
+    container_name: salt-minion-vcf
+    hostname: salt-minion-vcf
+    restart: unless-stopped
+
+    environment:
+      DEPLOYMENT_TYPE: docker
+      SALT_MASTER: "${SALT_MASTER}"
+      SALT_MASTER_PORT: "${SALT_MASTER_PORT:-4506}"
+      SALT_PUBLISH_PORT: "${SALT_PUBLISH_PORT:-4505}"
+      SALT_MINION_ID: "${SALT_MINION_ID:-vcf-docker-executor-01}"
+      SALT_MASTER_FINGER: "${SALT_MASTER_FINGER:-}"
+      SALT_LOG_LEVEL: "${SALT_LOG_LEVEL:-info}"
+      # Opt-in, unverified beyond basic testing - see README.md "Vault Integration".
+      SALT_FILE_CLIENT_LOCAL: "${SALT_FILE_CLIENT_LOCAL:-false}"
+      # Vault integration (saltext.vault) - all optional, disabled unless VAULT_ADDR is set.
+      VAULT_ADDR: "${VAULT_ADDR:-}"
+      VAULT_AUTH_METHOD: "${VAULT_AUTH_METHOD:-approle}"
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID:-}"
+      # Prefer VAULT_SECRET_ID_FILE (a mounted file, see volumes below) over
+      # this plain env var - VAULT_SECRET_ID ends up in `docker inspect`.
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID:-}"
+      VAULT_SECRET_ID_FILE: "${VAULT_SECRET_ID_FILE:-}"
+      VAULT_TOKEN: "${VAULT_TOKEN:-}"
+      VAULT_TOKEN_FILE: "${VAULT_TOKEN_FILE:-}"
+
+    volumes:
+      - salt-minion-pki:/etc/salt/pki/minion
+      # Optional additional configuration:
+      # - ./config/90-customer.conf:/etc/salt/minion.d/90-customer.conf:ro
+      # Optional local pillar for saltext.vcf credentials (see pillar/*.sls.example
+      # and README.md). Not :ro - the entrypoint auto-generates top.sls here on
+      # start. Once running, push updates without restarting via
+      # ./scripts/pillar-push.sh salt-minion-vcf pillar/<name>.sls instead.
+      # - ./pillar:/etc/salt/pillar
+      # Preferred way to supply the Vault AppRole secret_id - avoids it
+      # showing up in `docker inspect`/`docker compose config`:
+      # - ./vault-secret-id:/run/secrets/vault-secret-id:ro
+      # then set VAULT_SECRET_ID_FILE=/run/secrets/vault-secret-id above.
+
+  # DEV/TEST ONLY: a throwaway Salt Master for validating the POC flow
+  # (connect -> accept key -> test.ping) without a real customer master.
+  # Start with: docker compose --profile dev up -d --build
+  salt-master:
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: docker/dev-master/Dockerfile
+      args:
+        SALT_VERSION: "${SALT_VERSION:-3008.2}"
+        APT_MIRROR: "${APT_MIRROR:-}"
+        SALT_GPG_KEY_URL: "${SALT_GPG_KEY_URL:-https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public}"
+        SALT_APT_REPO_URL: "${SALT_APT_REPO_URL:-https://packages.broadcom.com/artifactory/saltproject-deb}"
+    image: "salt-minion-vcf-dev-master:${SALT_VERSION:-3008.2}"
+    container_name: salt-minion-vcf-dev-master
+    hostname: salt-master
+    volumes:
+      - salt-dev-master-pki:/etc/salt/pki/master
+
+  # DEV/TEST ONLY: local HashiCorp Vault in dev mode (in-memory, ephemeral,
+  # auto-unsealed, well-known root token) for testing the Vault integration
+  # (see README.md "Vault Integration"). Never use dev mode outside testing.
+  # Start with: docker compose --profile dev up -d vault
+  vault:
+    profiles: ["dev"]
+    image: hashicorp/vault:1.18
+    container_name: salt-minion-vcf-dev-vault
+    hostname: vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+
+volumes:
+  salt-minion-pki:
+  salt-dev-master-pki:

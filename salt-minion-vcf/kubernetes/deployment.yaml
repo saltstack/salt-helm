@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: salt-minion-vcf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: salt-minion-vcf
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: salt-minion-vcf
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        runAsGroup: 10000
+        fsGroup: 10000
+      containers:
+        - name: minion
+          image: salt-minion-vcf:0.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DEPLOYMENT_TYPE
+              value: kubernetes
+            - name: SALT_MINION_ID
+              value: vcf-k8s-executor-01
+            - name: SALT_LOG_LEVEL
+              value: info
+            # Vault integration (saltext.vault) - see the matching comment
+            # in statefulset.yaml and README.md "Vault Integration".
+            # - name: SALT_FILE_CLIENT_LOCAL
+            #   value: "true"
+            # - name: VAULT_ADDR
+            #   value: https://vault.example.com:8200
+            # - name: VAULT_AUTH_METHOD
+            #   value: approle
+            # - name: VAULT_ROLE_ID
+            #   value: <role-id>
+            # - name: VAULT_SECRET_ID_FILE
+            #   value: /var/run/secrets/vault/secret_id
+          volumeMounts:
+            - name: master-config
+              mountPath: /etc/salt/minion.d/10-master.conf
+              subPath: 10-master.conf
+              readOnly: true
+            - name: pki
+              mountPath: /etc/salt/pki/minion
+            # Optional local pillar for saltext.vcf credentials - see the
+            # matching comment in statefulset.yaml and pillar/*.sls.example.
+            # - name: pillar
+            #   mountPath: /etc/salt/pillar
+            #   readOnly: true
+            # - name: vault-secret
+            #   mountPath: /var/run/secrets/vault
+            #   readOnly: true
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "salt-call --local --retcode-passthrough test.ping >/dev/null"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "salt-call --retcode-passthrough status.master >/dev/null"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: master-config
+          configMap:
+            name: salt-minion-vcf-config
+        - name: pki
+          persistentVolumeClaim:
+            claimName: salt-minion-vcf-pki
+        # - name: pillar
+        #   secret:
+        #     secretName: salt-minion-vcf-pillar
+        # - name: vault-secret
+        #   secret:
+        #     secretName: salt-minion-vcf-vault
