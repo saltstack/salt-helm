@@ -1,0 +1,62 @@
+{{- if and .Values.agent.persistence.enabled (eq .Values.agent.persistence.type "hostPath") (not .Values.agent.nodeSelector) }}
+{{- fail "agent.persistence.type=hostPath requires agent.nodeSelector to pin the pod to the node holding the persisted /etc/salt/pki data" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: salt-master-kubernetes
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: salt-master-kubernetes
+    app.kubernetes.io/name: salt-master-kubernetes
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  replicas: {{ .Values.agent.replicas }}
+  selector:
+    matchLabels:
+      app: salt-master-kubernetes
+  template:
+    metadata:
+      labels:
+        app: salt-master-kubernetes
+        app.kubernetes.io/name: salt-master-kubernetes
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: salt-master
+          image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+          env:
+            - name: SALT_AUTO_ACCEPT
+              value: {{ .Values.agent.autoAccept | quote }}
+            {{- if .Values.agent.masterId }}
+            - name: SALT_MASTER_ID
+              value: {{ .Values.agent.masterId | quote }}
+            {{- end }}
+          ports:
+            - name: publish
+              containerPort: 4505
+            - name: ret
+              containerPort: 4506
+          {{- if .Values.agent.persistence.enabled }}
+          volumeMounts:
+            - name: pki
+              mountPath: /etc/salt/pki
+          {{- end }}
+      {{- if .Values.agent.persistence.enabled }}
+      volumes:
+        - name: pki
+          {{- if eq .Values.agent.persistence.type "hostPath" }}
+          hostPath:
+            path: {{ .Values.agent.persistence.hostPath.path }}
+            type: DirectoryOrCreate
+          {{- else }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.agent.persistence.pvc.existingClaim | default "salt-master-kubernetes-pki" }}
+          {{- end }}
+      {{- end }}

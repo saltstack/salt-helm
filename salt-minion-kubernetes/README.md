@@ -62,7 +62,8 @@ The following table lists the most commonly overridden values. See
 | `agent.image.repository` | Salt minion image repository. | `saltstack/salt` |
 | `agent.image.tag` | Salt minion image tag. | `3007.1` |
 | `agent.saltMasterHost` | Salt master address. Required for `in_cluster` mode. | `""` |
-| `agent.saltMasterPort` | Salt master port. | `4506` |
+| `agent.saltMasterPort` | Salt master "ret" port (`master_port`). Override alongside `agent.saltPublishPort` when the master isn't reachable on its default ports, e.g. behind a Kubernetes NodePort Service. | `4506` |
+| `agent.saltPublishPort` | Salt master "publish" port (`publish_port`). | `4505` |
 | `agent.minion.id` | Salt minion ID. Empty uses the pod hostname. | `""` |
 | `agent.persistence.enabled` | Persist the minion's generated keypair (`/etc/salt/pki`) across pod restarts. | `false` |
 | `agent.persistence.type` | `pvc` or `hostPath`. `hostPath` requires `agent.nodeSelector`. | `pvc` |

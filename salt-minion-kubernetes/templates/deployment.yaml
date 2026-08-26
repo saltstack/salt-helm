@@ -49,6 +49,8 @@ spec:
               value: {{ .Values.agent.saltMasterHost | quote }}
             - name: SALT_MASTER_PORT
               value: {{ .Values.agent.saltMasterPort | quote }}
+            - name: SALT_PUBLISH_PORT
+              value: {{ .Values.agent.saltPublishPort | quote }}
             {{- if .Values.agent.minion.id }}
             - name: SALT_MINION_ID
               value: {{ .Values.agent.minion.id | quote }}

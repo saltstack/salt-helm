@@ -1,0 +1,17 @@
+apiVersion: v2
+name: salt-master-kubernetes
+description: >
+  Installs a Salt master as a Kubernetes Deployment, exposed via a NodePort
+  Service (4505/4506) for minions that run outside normal pod scheduling
+  (see scripts/push-image-to-nodes.sh). Deliberately minimal: no RBAC and
+  no saltext.kubernetes install, since the master never calls the
+  Kubernetes API itself -- see docker/salt-master/README.md.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - salt
+  - saltstack
+  - kubernetes
+maintainers:
+  - name: salt-compliance-team

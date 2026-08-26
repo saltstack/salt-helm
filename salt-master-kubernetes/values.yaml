@@ -1,0 +1,62 @@
+# Namespace where all salt-master-kubernetes objects are deployed.
+namespace: kube-system
+
+agent:
+  image:
+    # Built from docker/salt-master/Dockerfile; not published to a registry
+    # yet -- push it to each node's containerd store with
+    # scripts/push-image-to-nodes.sh --role=master first.
+    repository: salt-master
+    tag: "3007.1"
+    pullPolicy: IfNotPresent
+  replicas: 1
+
+  # Auto-accepts new minion keys instead of requiring a manual `salt-key -a`
+  # per minion. Convenient for dev/test labs; leave false for a production
+  # master.
+  autoAccept: false
+
+  # Sets `id:` on the master itself. Leave empty to use the pod hostname.
+  masterId: ""
+
+  # Persists the master's /etc/salt/pki (its own keypair *and* the
+  # accepted/pending minion key lists) across pod restarts. Without this,
+  # every restart regenerates the master's keypair (breaking every minion's
+  # cached copy of it) and forgets which minion keys were already accepted
+  # -- the same failure mode salt-minion-kubernetes documents for its own
+  # key, just master-side.
+  persistence:
+    enabled: false
+    # "pvc" (default; needs a StorageClass) or "hostPath" (bare-metal/kubeadm
+    # labs with no dynamic provisioner -- ties the data to whichever node
+    # it's written on, so pair it with nodeSelector below).
+    type: pvc
+    pvc:
+      # Set to reuse an existing PVC instead of having this chart create one.
+      existingClaim: ""
+      # Empty uses the cluster's default StorageClass.
+      storageClassName: ""
+      accessMode: ReadWriteOnce
+      size: 1Gi
+    hostPath:
+      path: /var/lib/salt-master-kubernetes/pki
+
+  # Only relevant when persistence.type=hostPath: pins the pod to the node
+  # whose disk holds the persisted keypair, e.g. {kubernetes.io/hostname: k8s-cp}.
+  # `kubectl get nodes` for hostnames.
+  nodeSelector: {}
+
+serviceAccount:
+  name: salt-master-kubernetes
+  # Add EKS IRSA or other provider-specific annotations here.
+  annotations: {}
+
+service:
+  # NodePort, not ClusterIP: this project's test-lab minions run outside
+  # normal pod scheduling (pushed directly into each node's containerd
+  # store -- see scripts/push-image-to-nodes.sh), so they reach the master
+  # via a node IP rather than in-cluster Service DNS.
+  type: NodePort
+  nodePorts:
+    publish: 30505
+    ret: 30506

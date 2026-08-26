@@ -21,7 +21,12 @@ agent:
   replicas: 1
   # Salt master address. Required when authMode=in_cluster.
   saltMasterHost: ""
+  # "ret" channel (master_port). Override alongside saltPublishPort whenever
+  # the master isn't reachable on its default ports as-is -- e.g. behind a
+  # Kubernetes NodePort Service, where both ports get remapped.
   saltMasterPort: 4506
+  # "publish" channel (publish_port).
+  saltPublishPort: 4505
   minion:
     # Salt minion ID. Leave empty to use the pod hostname.
     id: ""

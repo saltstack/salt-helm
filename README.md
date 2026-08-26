@@ -6,12 +6,17 @@ Helm charts for deploying different flavours of Salt images to Kubernetes.
 
 | Chart | Description |
 | --- | --- |
+| [salt-master-kubernetes](salt-master-kubernetes) | Installs a Salt master Deployment exposed via a NodePort Service, for minions connecting from outside normal pod scheduling. Deliberately minimal - no RBAC, no saltext.kubernetes install. |
 | [salt-minion-kubernetes](salt-minion-kubernetes) | Installs Salt Minion and RBAC. Has built-in support to run CIS Kubernetes compliance assessments via kube-bench on-demand Jobs. Supports in-cluster (minion runs as a pod) and external (RBAC only) modes. |
 | [salt-minion-vcf](salt-minion-vcf) | Extensible Salt Minion image (Docker, Docker Compose, Kubernetes, and Helm) preloaded with configurable Salt extensions - `saltext.vcf` (VMware Cloud Foundation automation: vCenter, NSX, SDDC-M, VCF Ops) by default, but not limited to it. Includes `saltext.vault` integration for sourcing credentials from HashiCorp Vault into Pillar instead of storing them on disk. Unlike the other entries here, this directory is the full project (Dockerfile, Docker Compose, scripts, docs), not a chart-only directory - the Helm chart itself lives at [`salt-minion-vcf/helm/salt-minion-vcf`](salt-minion-vcf/helm/salt-minion-vcf). |
 
 ## Usage
 
 ### Kubernetes / Helm
+
+```bash
+helm install salt-master-kubernetes ./salt-master-kubernetes -f my-values.yaml
+```
 
 ```bash
 helm install salt-minion-kubernetes ./salt-minion-kubernetes -f my-values.yaml
