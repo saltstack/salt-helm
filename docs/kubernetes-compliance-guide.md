@@ -141,12 +141,46 @@ kubectl -n kube-system exec -it deploy/salt-master-kubernetes -- salt '<minion-i
 
 ### 2c. kube-bench
 
-> **TODO:** the `kube-bench-job` chart (installs a *suspended* CronJob that
-> acts as a pod-spec template — `kube_bench_cache.run_assessment` below
-> creates on-demand Jobs from it; the CronJob itself never fires on its own
-> schedule) isn't included in this repo yet, pending a decision on where it
-> will be published. This section will document `helm install
-> kube-bench-job` once that's settled.
+The `kube-bench-job` chart installs a *suspended* CronJob that acts as a
+pod-spec template — `kube_bench_cache.run_assessment` (below) creates
+on-demand Jobs from it; the CronJob itself never fires on its own schedule.
+It's published as a reference chart in
+[`salt-k8s-compliance`](https://github.com/saltstack/salt-k8s-compliance)
+rather than this repo:
+
+```bash
+git clone https://github.com/saltstack/salt-k8s-compliance.git
+helm install kube-bench-job salt-k8s-compliance/helm/kube-bench-job -f my-kube-bench-values.yaml
+```
+
+> Treat this chart as a **reference**, not a drop-in production install.
+> Review [`values.yaml`](https://github.com/saltstack/salt-k8s-compliance/blob/main/helm/kube-bench-job/values.yaml)
+> before installing — in particular `nodeMounts.*` (host paths differ across
+> distros; kubeadm defaults won't match RKE2/k3s), `tolerations` (if
+> control-plane nodes should be assessed too), and `cronJob.parallelism`
+> (set to your actual node count) — and adapt it to your cluster rather than
+> installing it as-is.
+>
+> **All `nodeMounts.*` paths must be correct for your distro, or assessment
+> results will be wrong, not just incomplete.** kube-bench checks that rely
+> on a missing/mismatched host path (e.g. the etcd data directory checks)
+> come back as an outright **FAIL**, not "skipped" or "not applicable" —
+> so a wrong mount silently produces false-negative compliance results
+> rather than an obvious error. Verify every path against the actual node
+> before trusting the assessment output.
+
+Two values **must** match the corresponding `salt-minion-kubernetes` values,
+or `run_assessment` won't find the CronJob it's looking for:
+
+| `kube-bench-job` value | Must match `salt-minion-kubernetes` value |
+| --- | --- |
+| `namespace` | `namespace` |
+| `cronJob.name` | `kubeBench.cronJobName` |
+
+See [`salt-k8s-compliance/helm/kube-bench-job/README.md`](https://github.com/saltstack/salt-k8s-compliance/blob/main/helm/kube-bench-job/README.md)
+for the full configuration reference, including host-path mounts for
+non-kubeadm distros (RKE2/k3s) and the RBAC gaps to watch for on multi-node
+clusters.
 
 ## 3. Run a compliance assessment
 
@@ -184,6 +218,6 @@ multi-node cluster can have multiple results for the same control —
 `kube_bench_cache`'s behavior (namespace, cache TTL, Job vs. DaemonSet
 collection strategy, auth mode, etc.) is driven by the `kube_bench` pillar
 key, rendered into `/srv/pillar/kube_bench.sls` by the `pillar.*` values in
-`salt-minion-kubernetes/values.yaml` — these must stay in sync with whatever
-`kube-bench-job` chart values you end up using (namespace, CronJob name,
-label selector) once that chart is available.
+`salt-minion-kubernetes/values.yaml` — these must stay in sync with the
+`kube-bench-job` chart values from step 2c (namespace, CronJob name, label
+selector).
