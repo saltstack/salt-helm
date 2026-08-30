@@ -37,7 +37,18 @@ master_tries: -1
 retry_dns: 30
 EOF
 
-  if [ -n "${SALT_MASTER_FINGER:-}" ]; then
+  # Preferred: pre-seed the master's actual public key so the minion trusts
+  # it directly on first connect, instead of independently re-deriving and
+  # comparing a fingerprint (master_finger) against whatever key is presented
+  # live - the two can disagree for reasons outside this image's control
+  # (e.g. a management-plane key registry vs. what the wire protocol
+  # presents), and this is also how VCF's own internal component minions are
+  # bootstrapped - handed the master's public key directly, no fingerprint
+  # verification. SALT_MASTER_PUBKEY_B64 takes precedence over the legacy
+  # SALT_MASTER_FINGER when both are set.
+  if [ -n "${SALT_MASTER_PUBKEY_B64:-}" ]; then
+    echo "${SALT_MASTER_PUBKEY_B64}" | base64 -d > /etc/salt/pki/minion/minion_master.pub
+  elif [ -n "${SALT_MASTER_FINGER:-}" ]; then
     cat >> "$MASTER_CONFIG" <<EOF
 master_finger: '${SALT_MASTER_FINGER}'
 EOF
@@ -46,6 +57,23 @@ elif [ ! -s "$MASTER_CONFIG" ]; then
   echo >&2 "ERROR: Salt Master configuration is missing."
   echo >&2 "Provide SALT_MASTER or mount ${MASTER_CONFIG} (Kubernetes ConfigMap)."
   exit 64
+fi
+
+# FIPS-compliant crypto defaults: VCF-managed Salt masters run FIPS-validated
+# crypto libraries that do not implement SHA-1 for RSA OAEP/PKCS1v15
+# operations at all - a minion defaulting to SHA-1 doesn't get a clean
+# protocol-level rejection from them, it triggers an unhandled exception on
+# both sides ("Some exception handling minion payload" / "...a payload from
+# minion") on every single auth attempt. These are the same values real
+# VCF-managed minions use. Set SALT_FIPS_MODE=false only if your target
+# master is confirmed to NOT be FIPS-enforced.
+FIPS_CONFIG="${CONFIG_DIR}/15-fips.conf"
+if [ "${SALT_FIPS_MODE:-true}" = "true" ]; then
+  cat > "$FIPS_CONFIG" <<EOF
+fips_mode: True
+encryption_algorithm: ${SALT_ENCRYPTION_ALGORITHM:-OAEP-SHA224}
+signing_algorithm: ${SALT_SIGNING_ALGORITHM:-PKCS1v15-SHA224}
+EOF
 fi
 
 cat > "$RUNTIME_CONFIG" <<EOF
@@ -160,6 +188,7 @@ else
 fi
 echo "Log Level       : ${SALT_LOG_LEVEL}"
 echo "file_client     : $([ "${SALT_FILE_CLIENT_LOCAL:-false}" = "true" ] && echo local || echo remote)"
+echo "FIPS Mode       : $([ "${SALT_FIPS_MODE:-true}" = "true" ] && echo "enabled (${SALT_ENCRYPTION_ALGORITHM:-OAEP-SHA224}/${SALT_SIGNING_ALGORITHM:-PKCS1v15-SHA224})" || echo disabled)"
 echo "Vault           : $([ -n "${VAULT_ADDR:-}" ] && echo "${VAULT_ADDR}" || echo disabled)"
 echo "===================================================="
 

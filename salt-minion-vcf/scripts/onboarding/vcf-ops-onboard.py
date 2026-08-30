@@ -12,16 +12,24 @@ Flow:
   2. Resolve the Salt master governing a given VCF instance
      (GET /suite-api/api/salt/master?resourceId=<vcfInstanceId>).
   3. Compute the Salt-compatible master_finger from the returned master
-     public key, so the minion can verify the master's identity on connect.
+     public key (used for the Kubernetes/Helm path, and for your own
+     reference/audit trail either way).
   4. Start the minion (docker run, or helm install/upgrade), pointed at the
-     master and given a freshly generated minion ID. The minion generates
-     its own RSA keypair locally on first start - this script never sees it.
+     master and given a freshly generated minion ID. Docker minions are
+     pre-seeded with the master's actual public key (not just its
+     fingerprint) so they trust it directly on first connect - the same
+     approach VCF's own internal component minions use. The minion
+     generates its own RSA keypair locally on first start - this script
+     never sees it.
   5. Read back the minion's public key (never the private key) and its ID.
   6. Trust that key against the master
      (POST /suite-api/api/salt/minions/{minionId}/trusted-keys).
-  7. Poll the minion (already retrying in the background) until the master
-     accepts it, using the exact check the image's own healthcheck/readiness
-     probe uses: `salt-call status.master`.
+  7. Poll the minion (already retrying in the background) until it connects,
+     primarily by watching its logs for the event-driven "Minion is ready to
+     receive requests" line, falling back to a time-boxed `salt-call
+     status.master` (the same check the image's own healthcheck/readiness
+     probe uses, but that check alone can hang or under-report - see the
+     comments on docker_is_connected()/kubectl_is_connected()).
 
 Steps 4-7 can be repeated for multiple minions in one session without
 re-entering VCF Operations credentials.
@@ -274,7 +282,8 @@ def wait_until(predicate: Callable[[], bool], timeout: int, check_interval: floa
 # Shell command execution
 # --------------------------------------------------------------------------
 
-def run(cmd: list, dry_run: bool = False, capture: bool = False, check: bool = True) -> str:
+def run(cmd: list, dry_run: bool = False, capture: bool = False, check: bool = True,
+        timeout: float = None) -> str:
     printable = " ".join(shlex.quote(c) for c in cmd)
     print(f"  $ {printable}")
     LOG.debug(f"$ {printable}")
@@ -287,9 +296,15 @@ def run(cmd: list, dry_run: bool = False, capture: bool = False, check: bool = T
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.STDOUT if capture else None,
             text=True,
+            timeout=timeout,
         )
     except FileNotFoundError:
         die(f"Command not found: {cmd[0]}. Is it installed and on PATH?")
+    except subprocess.TimeoutExpired:
+        LOG.warning(f"command timed out after {timeout}s: {printable}")
+        if check:
+            raise
+        return ""
     except subprocess.CalledProcessError as e:
         LOG.error(f"command failed (exit {e.returncode}): {printable}")
         raise
@@ -380,16 +395,20 @@ class OpsClient:
     def get_master_details(self, vcf_instance_id: str) -> dict:
         """GET /api/salt/master?resourceId=<id> -> {resourceId, masterId, masterFqdn,
         masterPublicKey (base64 of the PEM text), masterKeyState, presenceStatus}."""
-        return self._request("GET", "/api/salt/master", params={"resourceId": vcf_instance_id})
+        result = self._request("GET", "/api/salt/master", params={"resourceId": vcf_instance_id})
+        LOG.debug(f"GET /api/salt/master response body: {result}")
+        return result
 
     def add_trusted_key(self, minion_id: str, master_id: str, minion_public_key_pem: str) -> dict:
         """POST /api/salt/minions/{minionId}/trusted-keys
         Body: {masterId, minionPublicKey} - minionPublicKey is RAW PEM text here
         (NOT base64-encoded - only the master pubkey in GET responses is)."""
-        return self._request(
+        result = self._request(
             "POST", f"/api/salt/minions/{minion_id}/trusted-keys",
             json_body={"masterId": master_id, "minionPublicKey": minion_public_key_pem},
         )
+        LOG.debug(f"POST /api/salt/minions/{minion_id}/trusted-keys response body: {result}")
+        return result
 
 
 # --------------------------------------------------------------------------
@@ -422,7 +441,7 @@ class DockerConfig:
     container_name: str
     volume: str
     master_fqdn: str
-    master_finger: str
+    master_pubkey_b64: str
     minion_id: str
 
 
@@ -449,7 +468,7 @@ def docker_start(cfg: DockerConfig, dry_run: bool, assume_yes: bool = False) -> 
         "docker", "run", "-d",
         "--name", cfg.container_name,
         "-e", f"SALT_MASTER={cfg.master_fqdn}",
-        "-e", f"SALT_MASTER_FINGER={cfg.master_finger}",
+        "-e", f"SALT_MASTER_PUBKEY_B64={cfg.master_pubkey_b64}",
         "-e", f"SALT_MINION_ID={cfg.minion_id}",
         "-v", f"{cfg.volume}:/etc/salt/pki/minion",
         cfg.image,
@@ -457,8 +476,10 @@ def docker_start(cfg: DockerConfig, dry_run: bool, assume_yes: bool = False) -> 
     run(cmd, dry_run=dry_run)
 
 
-def docker_exec(container: str, args: list, dry_run: bool = False, check: bool = True) -> str:
-    return run(["docker", "exec", container] + args, dry_run=dry_run, capture=True, check=check)
+def docker_exec(container: str, args: list, dry_run: bool = False, check: bool = True,
+                 timeout: float = None) -> str:
+    return run(["docker", "exec", container] + args, dry_run=dry_run, capture=True, check=check,
+                timeout=timeout)
 
 
 def docker_read_minion_pubkey(container: str, timeout: int, dry_run: bool) -> str:
@@ -484,23 +505,32 @@ def docker_read_minion_pubkey(container: str, timeout: int, dry_run: bool) -> st
 MINION_READY_LOG_MARKER = "Minion is ready to receive requests"
 
 
+STATUS_MASTER_CHECK_TIMEOUT = 8  # seconds
+
+
 def docker_is_connected(container: str, dry_run: bool) -> bool:
     if dry_run:
         return True
-    # status.master's answer depends on master_alive_interval being configured on the
-    # minion, which this image's entrypoint does not set - it can under-report even
-    # once actually connected. The log line below is emitted once, event-driven, the
-    # moment the pub/req channels with the master are established, so it doesn't have
-    # that gap; treat either signal as sufficient.
+    # The log line below is emitted once, event-driven, the moment the pub/req
+    # channels with the master are established - check it first since it's a
+    # plain local `docker logs` call that cannot itself hang.
+    logs = run(["docker", "logs", container], dry_run=dry_run, capture=True, check=False)
+    if MINION_READY_LOG_MARKER in logs:
+        return True
+    # `salt-call status.master` is a weaker, secondary signal: its answer depends
+    # on master_alive_interval being configured on the minion (this image's
+    # entrypoint does not set it, so it can under-report even once connected),
+    # and - without --local - salt-call itself tries to compile pillar from the
+    # master first, which can hang for a long time (or indefinitely) while the
+    # minion is still mid-handshake. Run it with a hard timeout so a hang here
+    # can never block the overall connect-timeout/poll loop.
     out = docker_exec(
         container,
-        ["salt-call", "--out=newline_values_only", "--retcode-passthrough", "status.master"],
+        ["salt-call", "--local", "--out=newline_values_only", "--retcode-passthrough", "status.master"],
         check=False,
+        timeout=STATUS_MASTER_CHECK_TIMEOUT,
     )
-    if out.strip().lower() == "true":
-        return True
-    logs = run(["docker", "logs", container], dry_run=dry_run, capture=True, check=False)
-    return MINION_READY_LOG_MARKER in logs
+    return out.strip().lower() == "true"
 
 
 # --------------------------------------------------------------------------
@@ -556,9 +586,10 @@ def kubectl_get_pod_name(namespace: str, release_name: str, dry_run: bool, timeo
     return result["name"]
 
 
-def kubectl_exec(namespace: str, pod: str, args: list, dry_run: bool = False, check: bool = True) -> str:
+def kubectl_exec(namespace: str, pod: str, args: list, dry_run: bool = False, check: bool = True,
+                  timeout: float = None) -> str:
     return run(["kubectl", "exec", "-n", namespace, pod, "--"] + args,
-               dry_run=dry_run, capture=True, check=check)
+               dry_run=dry_run, capture=True, check=check, timeout=timeout)
 
 
 def kubectl_read_minion_pubkey(namespace: str, pod: str, timeout: int, dry_run: bool) -> str:
@@ -584,17 +615,20 @@ def kubectl_read_minion_pubkey(namespace: str, pod: str, timeout: int, dry_run: 
 def kubectl_is_connected(namespace: str, pod: str, dry_run: bool) -> bool:
     if dry_run:
         return True
-    # See the comment on docker_is_connected() - status.master alone can under-report;
-    # the log marker is an event-driven signal emitted only after successful auth.
+    # See the comments on docker_is_connected() - check the event-driven log
+    # marker first (a plain `kubectl logs` call that cannot itself hang), and
+    # only fall back to the weaker, hang-prone `status.master` check, bounded
+    # by a hard timeout, if the marker hasn't shown up yet.
+    logs = run(["kubectl", "logs", "-n", namespace, pod], dry_run=dry_run, capture=True, check=False)
+    if MINION_READY_LOG_MARKER in logs:
+        return True
     out = kubectl_exec(
         namespace, pod,
-        ["salt-call", "--out=newline_values_only", "--retcode-passthrough", "status.master"],
+        ["salt-call", "--local", "--out=newline_values_only", "--retcode-passthrough", "status.master"],
         check=False,
+        timeout=STATUS_MASTER_CHECK_TIMEOUT,
     )
-    if out.strip().lower() == "true":
-        return True
-    logs = run(["kubectl", "logs", "-n", namespace, pod], dry_run=dry_run, capture=True, check=False)
-    return MINION_READY_LOG_MARKER in logs
+    return out.strip().lower() == "true"
 
 
 # --------------------------------------------------------------------------
@@ -664,7 +698,7 @@ DEFAULT_IMAGE_TAG = "0.1.0"
 
 
 def onboard_one_minion(client: OpsClient, args: argparse.Namespace,
-                        master_id: str, master_fqdn: str, master_finger: str,
+                        master_id: str, master_fqdn: str, master_pubkey_b64: str, master_finger: str,
                         deployment: str, defaults: dict, index: int) -> dict:
     """
     Runs steps 4-7 for a single minion and returns a summary dict.
@@ -703,14 +737,14 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace,
             ("Image", image),
             ("Container name", container_name),
             ("PKI volume", volume),
-            ("Salt master", f"{master_fqdn} (master_finger computed)"),
+            ("Salt master", f"{master_fqdn} (master pubkey pre-seeded)"),
         ])
         if not confirm("Proceed with these settings?", assume_yes=args.yes):
             die("Aborted by user.", code=0)
 
         docker_cfg = DockerConfig(
             image=image, container_name=container_name, volume=volume,
-            master_fqdn=master_fqdn, master_finger=master_finger, minion_id=minion_id,
+            master_fqdn=master_fqdn, master_pubkey_b64=master_pubkey_b64, minion_id=minion_id,
         )
         docker_start(docker_cfg, dry_run=args.dry_run, assume_yes=args.yes)
         ok(f"Container '{container_name}' started")
@@ -839,10 +873,16 @@ def main() -> None:
 
     master_id = master["masterId"]
     master_fqdn = master["masterFqdn"]
-    master_pubkey_pem = base64.b64decode(master["masterPublicKey"]).decode("utf-8")
+    master_pubkey_b64 = master["masterPublicKey"]
+    master_pubkey_pem = base64.b64decode(master_pubkey_b64).decode("utf-8")
     ok(f"Master resolved: {master_id} @ {master_fqdn}")
 
     # ---------------------------------------------------------------- Step 3
+    # Docker minions are pre-seeded with the master's actual public key
+    # (SALT_MASTER_PUBKEY_B64) rather than a fingerprint - see
+    # docker-entrypoint.sh for why. The fingerprint below is still computed
+    # for the Kubernetes/Helm path (which only supports master_finger today)
+    # and for your own reference/audit trail.
     step(3, TOTAL_STEPS, "Compute master identity fingerprint")
     master_finger = pem_finger(master_pubkey_pem, sum_type=args.master_finger_algo)
     ok(f"master_finger ({args.master_finger_algo}): {master_finger}")
@@ -855,7 +895,7 @@ def main() -> None:
     defaults: dict = {}
     index = 1
     while True:
-        result = onboard_one_minion(client, args, master_id, master_fqdn, master_finger,
+        result = onboard_one_minion(client, args, master_id, master_fqdn, master_pubkey_b64, master_finger,
                                      deployment, defaults, index)
         onboarded.append(result)
 

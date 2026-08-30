@@ -49,11 +49,18 @@ handles, in order:
 
 1. Logs in to VCF Operations.
 2. Resolves the Salt master governing the given VCF instance.
-3. Computes the master's identity fingerprint (`master_finger`).
+3. Computes the master's identity fingerprint (`master_finger`) - used for
+   the Kubernetes/Helm path and for your own reference/audit trail.
 4. Starts the minion (`docker run`, or `helm upgrade --install`), passing it
-   the master FQDN, `master_finger`, and a freshly generated minion ID. The
-   minion generates its own RSA keypair locally on first start - the
-   private key never leaves it, and VCF Operations credentials never reach it.
+   the master FQDN and a freshly generated minion ID. The minion generates
+   its own RSA keypair locally on first start - the private key never
+   leaves it, and VCF Operations credentials never reach it. Docker minions
+   are pre-seeded with the master's actual public key
+   (`SALT_MASTER_PUBKEY_B64`, written to `minion_master.pub`) rather than
+   just a fingerprint, so they trust it directly on first connect - the
+   same approach VCF's own internal component minions use. FIPS-compliant
+   crypto (`OAEP-SHA224`/`PKCS1v15-SHA224`) is on by default, matching what
+   VCF-managed Salt masters require - see Troubleshooting below.
 5. Reads back the minion's public key.
 6. Registers that key as trusted with the master.
 7. Waits until the master has actually accepted the connection.
@@ -90,7 +97,9 @@ docker logs salt-minion-vcf | grep "Minion is ready to receive requests"
 | `pull access denied for salt-minion-vcf` | Image not built locally yet - Docker tried to pull it from Docker Hub | `docker build -t salt-minion-vcf:0.1.0 .` from the repo root first, or point `--image` at wherever you built/pushed it |
 | `container name already in use` on retry | A previous failed attempt left a stopped container behind | The script now detects this and offers to remove it automatically |
 | `[CRITICAL] Unable to securely set the permissions of "/etc/salt/pki/minion"` / `PermissionError: Permission denied: '/etc/salt/pki/minion/tmp...'` | The PKI volume value was a host path (bind mount), not a named Docker volume - the container runs as non-root uid `10000`, and a bind-mounted host directory doesn't inherit the image's baked-in ownership | Use a plain volume name (e.g. `salt-minion-vcf-pki`, the default) instead of an absolute path. If you specifically need a host path, `chown -R 10000:10000` it first |
-| Minion key is accepted on the master (`salt-key -L` shows it), but the onboarding script (or the image's own `HEALTHCHECK`/`readinessProbe`) never reports it connected | `status.master`'s answer depends on `master_alive_interval` being configured on the minion, which the entrypoint doesn't set by default - it can under-report even once genuinely connected | The onboarding script also checks the minion's logs for `Minion is ready to receive requests` as a fallback, which doesn't have this gap. If you're checking manually, use that log line or `salt '<minion-id>' test.ping` from the master instead of relying on `status.master` alone |
+| Minion key is accepted on the master (`salt-key -L` shows it), but the onboarding script (or the image's own `HEALTHCHECK`/`readinessProbe`) never reports it connected, and can even appear to hang indefinitely | `status.master`'s answer depends on `master_alive_interval` being configured on the minion, which the entrypoint doesn't set by default - it can under-report even once genuinely connected. Worse, `salt-call status.master` (without `--local`) tries to compile pillar from the master before running the check at all, which can block for a long time (or indefinitely) while the minion is still mid-handshake | The onboarding script now checks the minion's logs for the event-driven `Minion is ready to receive requests` line *first* (a plain `docker logs`/`kubectl logs` call that can't itself hang), and only falls back to a time-boxed (8s) `salt-call --local status.master` if that line hasn't appeared yet. If you're checking manually, prefer that log line or `salt '<minion-id>' test.ping` from the master over `salt-call status.master` |
+| Minion loops forever on `[ERROR] Sign-in attempt failed: Some exception handling minion payload` (sometimes preceded by `{'ret': 'bad sig algo'}`), even though the key is accepted on the master and both ports (4505/4506) are reachable | The master runs FIPS-validated crypto and doesn't implement SHA-1 for RSA OAEP/PKCS1v15 at all - a minion defaulting to SHA-1 doesn't get a clean rejection, it crashes the master's payload handler on every single auth attempt (visible on the master's own log as `salt.channel.server: Some exception handling a payload from minion`) | FIPS mode (`fips_mode: True`, `encryption_algorithm: OAEP-SHA224`, `signing_algorithm: PKCS1v15-SHA224`) is on by default as of this image - see `docker-entrypoint.sh`. If you're running an older image or need to override it, set `SALT_FIPS_MODE=false` only if you've confirmed your master is *not* FIPS-enforced |
+| Minion key is accepted, FIPS is enabled, `_auth` completes without crashing, but the minion still never connects, with `[CRITICAL] The specified fingerprint in the master configuration file ... Does not match the authenticating master's key` | `master_finger`, computed by the onboarding script from the same `masterPublicKey` VCF Operations returns, did not match what the live master actually presented on the wire in this deployment - the underlying cause wasn't pinned down (possibly a RaaS/SSEAPI-key-vs-Salt-PKI-key distinction specific to this environment), but VCF's own internal component minions never do this fingerprint check at all - they're handed the master's public key directly and trust it | The onboarding script now pre-seeds the master's actual public key directly (`SALT_MASTER_PUBKEY_B64`, written to `/etc/salt/pki/minion/minion_master.pub`) instead of computing/checking a fingerprint, matching how internal component minions are bootstrapped. This is the default behavior as of this image/script version - `master_finger`/`SALT_MASTER_FINGER` is only used by the Kubernetes/Helm path today |
 
 ---
 

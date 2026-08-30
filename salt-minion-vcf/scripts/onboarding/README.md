@@ -11,9 +11,13 @@ credentials ever reaching the minion itself.
 ```text
 1. Log in to VCF Operations
 2. Resolve the Salt master for a given VCF instance
-3. Compute the master's identity fingerprint (master_finger)
+3. Compute the master's identity fingerprint (master_finger) - used for the
+   Kubernetes/Helm path and for your own reference/audit trail
 4. Start the minion (docker run, or helm upgrade --install), with a freshly
-   generated minion ID - the minion generates its own RSA keypair locally
+   generated minion ID - the minion generates its own RSA keypair locally.
+   Docker minions are pre-seeded with the master's actual public key
+   (not just its fingerprint) so they trust it directly on first connect -
+   the same approach VCF's own internal component minions use
 5. Read back the minion's public key (never the private key)
 6. Trust that key with the master
 7. Poll until the master accepts the connection
@@ -106,7 +110,15 @@ anything, `-y` to skip confirmation prompts).
   fronts VCF Operations with SSO/CSP instead, adjust `OpsClient.login()`.
 - **`master_finger` algorithm**: defaults to `sha256` (matches the Salt
   version this image bundles). Override with `--master-finger-algo md5` if
-  your Salt master needs the legacy default.
+  your Salt master needs the legacy default. Only used by the
+  Kubernetes/Helm path today - Docker minions are pre-seeded with the
+  master's actual public key instead (see "What it does" above).
+- **FIPS mode**: enabled by default (`fips_mode: True`,
+  `encryption_algorithm: OAEP-SHA224`, `signing_algorithm: PKCS1v15-SHA224`)
+  since VCF-managed Salt masters are typically FIPS-enforced and reject
+  SHA-1-based crypto with an unhandled error rather than a clean rejection.
+  Set `SALT_FIPS_MODE=false` on the minion only if you've confirmed your
+  target master is not FIPS-enforced.
 
 ## Known limitation
 
