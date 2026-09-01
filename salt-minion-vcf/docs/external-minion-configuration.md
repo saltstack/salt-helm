@@ -28,8 +28,9 @@ before it has any pillar data configured (Part 2) - it just can't run any
   instance's Suite API, and from the minion's host/cluster to the Salt
   master (`SALT_MASTER_PORT`/`4506`, `SALT_PUBLISH_PORT`/`4505`).
 - Credentials for a VCF Operations user with the Salt Management view/manage
-  privileges, and the resource UUID of the VCF instance whose master you
-  want to attach to.
+  privileges. The Salt master itself is chosen interactively from the list
+  VCF Operations returns - no VCF instance/resource ID is needed up front.
+- `openssl` on PATH (used to generate the minion's own RSA keypair).
 
 ### Procedure
 
@@ -39,7 +40,6 @@ Run the onboarding script:
 python3 scripts/onboarding/vcf-ops-onboard.py \
   --ops-host vcfops.example.com \
   --ops-user admin \
-  --vcf-instance-id <vcf-instance-resource-id> \
   --deployment docker    # or: kubernetes
 ```
 
@@ -48,22 +48,27 @@ review/confirm summary shown before anything is actually started. The script
 handles, in order:
 
 1. Logs in to VCF Operations.
-2. Resolves the Salt master governing the given VCF instance.
-3. Computes the master's identity fingerprint (`master_finger`) - used for
-   the Kubernetes/Helm path and for your own reference/audit trail.
-4. Starts the minion (`docker run`, or `helm upgrade --install`), passing it
-   the master FQDN and a freshly generated minion ID. The minion generates
-   its own RSA keypair locally on first start - the private key never
-   leaves it, and VCF Operations credentials never reach it. Docker minions
-   are pre-seeded with the master's actual public key
-   (`SALT_MASTER_PUBKEY_B64`, written to `minion_master.pub`) rather than
-   just a fingerprint, so they trust it directly on first connect - the
-   same approach VCF's own internal component minions use. FIPS-compliant
-   crypto (`OAEP-SHA224`/`PKCS1v15-SHA224`) is on by default, matching what
-   VCF-managed Salt masters require - see Troubleshooting below.
-5. Reads back the minion's public key.
-6. Registers that key as trusted with the master.
-7. Waits until the master has actually accepted the connection.
+2. Lists every Salt master VCF Operations knows about and prompts you to
+   pick one (by FQDN), flagging any that aren't `ACCEPTED`/`PRESENT` so you
+   don't pick one that won't actually work.
+3. Generates a fresh RSA keypair for the minion locally, via `openssl` - the
+   private key never leaves this process except to be handed directly to
+   the minion's own runtime, and VCF Operations credentials never reach the
+   minion itself.
+4. Registers the minion's public key as trusted against the selected master
+   - the minion ID is assigned by VCF Operations at this point, not chosen
+   by you or the script.
+5. Starts the minion (`docker run`, or `helm upgrade --install`), pre-seeded
+   with that exact keypair and minion ID. Docker minions are also pre-seeded
+   with the master's actual public key (`SALT_MASTER_PUBKEY_B64`, written to
+   `minion_master.pub`) rather than just a fingerprint, so they trust the
+   master directly on first connect - the same approach VCF's own internal
+   component minions use. FIPS-compliant crypto (`OAEP-SHA224`/
+   `PKCS1v15-SHA224`) is on by default, matching what VCF-managed Salt
+   masters require - see Troubleshooting below. Because trust was already
+   established in step 4 *before* the minion starts, there's no
+   waiting-for-acceptance window and no manual `salt-key -a`.
+6. Waits until the master has actually accepted the connection.
 
 Use `--dry-run` first if you want to preview every command and API call
 without executing anything. See `--help` for the full flag list, or

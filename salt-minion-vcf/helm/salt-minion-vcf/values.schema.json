@@ -52,6 +52,7 @@
           "enum": ["error", "warning", "info", "debug", "trace"]
         },
         "minionId": { "type": "string" },
+        "minionKeySecretName": { "type": "string" },
         "masterTries": { "type": "integer" },
         "retryDns": { "type": "integer", "minimum": 0 },
         "extraMinionConfig": { "type": "object" },

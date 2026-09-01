@@ -2,45 +2,51 @@
 """
 vcf-ops-onboard.py
 
-Interactive onboarding tool that brings up a salt-minion-vcf instance (Docker
-or Kubernetes/Helm) and registers it as a trusted minion against a VCF
-Operations-managed Salt master - with no private key ever leaving the minion,
-and no VCF Operations credentials ever reaching the minion itself.
+Interactive onboarding tool that registers a new externally managed Salt
+minion against a VCF Operations-managed Salt master, then brings up a
+salt-minion-vcf instance (Docker or Kubernetes/Helm) that is already
+trusted on first connect.
 
 Flow:
   1. Prompt for VCF Operations (Suite API) connection details and log in.
-  2. Resolve the Salt master governing a given VCF instance
-     (GET /suite-api/api/salt/master?resourceId=<vcfInstanceId>).
-  3. Compute the Salt-compatible master_finger from the returned master
-     public key (used for the Kubernetes/Helm path, and for your own
-     reference/audit trail either way).
-  4. Start the minion (docker run, or helm install/upgrade), pointed at the
-     master and given a freshly generated minion ID. Docker minions are
-     pre-seeded with the master's actual public key (not just its
-     fingerprint) so they trust it directly on first connect - the same
-     approach VCF's own internal component minions use. The minion
-     generates its own RSA keypair locally on first start - this script
-     never sees it.
-  5. Read back the minion's public key (never the private key) and its ID.
-  6. Trust that key against the master
-     (POST /suite-api/api/salt/minions/{minionId}/trusted-keys).
-  7. Poll the minion (already retrying in the background) until it connects,
-     primarily by watching its logs for the event-driven "Minion is ready to
-     receive requests" line, falling back to a time-boxed `salt-call
-     status.master` (the same check the image's own healthcheck/readiness
-     probe uses, but that check alone can hang or under-report - see the
-     comments on docker_is_connected()/kubectl_is_connected()).
+  2. List every Salt master known to VCF Operations
+     (GET /api/salt/masters) and interactively select one - by FQDN, with
+     its key/presence state shown so you don't pick a master that isn't
+     actually usable.
+  3. Generate a fresh RSA keypair for the minion, locally, via `openssl`.
+     The private key never leaves this process except to be handed
+     directly to the minion's own runtime (an env var for Docker, or a
+     Kubernetes Secret this script creates for you) - it is never sent to
+     VCF Operations, and never written to the console or the audit log.
+  4. Register the minion's public key as trusted against the selected
+     master (POST /api/salt/minions). The minion ID is always assigned by
+     VCF Operations, not chosen here - the response is the first time this
+     script (or you) learns what it is.
+  5. Start the minion (docker run, or helm install/upgrade), pre-seeded
+     with that exact keypair and minion ID, and with the master's actual
+     public key (not just its fingerprint) so it trusts the master
+     directly on first connect - the same approach VCF's own internal
+     component minions use. Because the trust relationship was already
+     established in step 4 *before* the minion ever starts, there is no
+     manual `salt-key -a` step and no waiting-for-acceptance window.
+  6. Poll the minion (already retrying in the background) until it
+     connects, primarily by watching its logs for the event-driven "Minion
+     is ready to receive requests" line, falling back to a time-boxed
+     `salt-call status.master` (the same check the image's own healthcheck/
+     readiness probe uses, but that check alone can hang or under-report -
+     see the comments on docker_is_connected()/kubectl_is_connected()).
 
-Steps 4-7 can be repeated for multiple minions in one session without
-re-entering VCF Operations credentials.
+Steps 3-6 can be repeated for multiple minions in one session without
+re-entering VCF Operations credentials or re-listing masters.
 
 Every step is written to a timestamped log file (default:
 vcf-ops-onboard-<timestamp>.log) in addition to the interactive console
-output, for audit/troubleshooting. Passwords and auth tokens are never
-logged.
+output, for audit/troubleshooting. Passwords, auth tokens, and private key
+material are never logged.
 
-Only two dependencies: Python 3.8+, and whichever of `docker`/`helm`+`kubectl`
-you're deploying with. No third-party pip packages required.
+Only three dependencies: Python 3.8+, `openssl` (minion keypair generation),
+and whichever of `docker`/`helm`+`kubectl` you're deploying with. No
+third-party pip packages required.
 
 Reference: https://github.com/saltstack/salt-helm/tree/main/salt-minion-vcf
 """
@@ -50,10 +56,8 @@ from __future__ import annotations
 import argparse
 import base64
 import getpass
-import hashlib
 import json
 import logging
-import re
 import shlex
 import ssl
 import subprocess
@@ -61,7 +65,6 @@ import sys
 import time
 import urllib.error
 import urllib.request
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Optional
@@ -69,9 +72,8 @@ from typing import Callable, Optional
 
 LOG = logging.getLogger("vcf_onboard")
 
-UUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
+HEALTHY_KEY_STATE = "ACCEPTED"
+HEALTHY_PRESENCE = "PRESENT"
 
 
 # --------------------------------------------------------------------------
@@ -160,11 +162,6 @@ def prompt(text: str, default: Optional[str] = None, secret: bool = False,
             continue
         LOG.debug(f"prompt '{text}' -> {'<redacted>' if secret else value}")
         return value
-
-
-def prompt_uuid(text: str, default: Optional[str] = None) -> str:
-    return prompt(text, default=default, validate=lambda v: bool(UUID_RE.match(v)),
-                  validate_hint="Expected a UUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6")
 
 
 def choose(text: str, options: list, default: Optional[str] = None) -> str:
@@ -283,15 +280,18 @@ def wait_until(predicate: Callable[[], bool], timeout: int, check_interval: floa
 # --------------------------------------------------------------------------
 
 def run(cmd: list, dry_run: bool = False, capture: bool = False, check: bool = True,
-        timeout: float = None) -> str:
+        timeout: float = None, input_data: Optional[str] = None,
+        redact_input_in_log: bool = False) -> str:
     printable = " ".join(shlex.quote(c) for c in cmd)
-    print(f"  $ {printable}")
-    LOG.debug(f"$ {printable}")
+    stdin_note = " < <redacted>" if (input_data and redact_input_in_log) else (" < -" if input_data else "")
+    print(f"  $ {printable}{stdin_note}")
+    LOG.debug(f"$ {printable}{stdin_note}")
     if dry_run:
         return ""
     try:
         result = subprocess.run(
             cmd,
+            input=input_data,
             check=check,
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.STDOUT if capture else None,
@@ -325,7 +325,8 @@ class OpsApiError(Exception):
 
 class OpsClient:
     """
-    Thin client for the two VCF Operations Salt trust-management endpoints.
+    Thin client for the two VCF Operations Salt trust-management endpoints
+    this script needs: listing masters, and registering a minion's key.
 
     Auth flow (matches the one already used by other internal tooling
     against this same backend):
@@ -392,43 +393,155 @@ class OpsClient:
         self._token = token
         LOG.info(f"Authenticated as {self.username} (token acquired, not logged)")
 
-    def get_master_details(self, vcf_instance_id: str) -> dict:
-        """GET /api/salt/master?resourceId=<id> -> {resourceId, masterId, masterFqdn,
-        masterPublicKey (base64 of the PEM text), masterKeyState, presenceStatus}."""
-        result = self._request("GET", "/api/salt/master", params={"resourceId": vcf_instance_id})
-        LOG.debug(f"GET /api/salt/master response body: {result}")
-        return result
+    def list_masters(self, page_size: int = 1000) -> list:
+        """GET /api/salt/masters -> a page of
+        {masterId, masterFqdn, masterPublicKey (base64), masterKeyState,
+        presenceStatus}. Unscoped - no VCF instance/resource ID needed.
 
-    def add_trusted_key(self, minion_id: str, master_id: str, minion_public_key_pem: str) -> dict:
-        """POST /api/salt/minions/{minionId}/trusted-keys
-        Body: {masterId, minionPublicKey} - minionPublicKey is RAW PEM text here
-        (NOT base64-encoded - only the master pubkey in GET responses is)."""
+        Fetches a single large page, which is fine for interactive use;
+        if your environment has more masters than page_size, pass a larger
+        value or add real pagination here."""
+        result = self._request("GET", "/api/salt/masters", params={"page": 0, "pageSize": page_size})
+        masters = result.get("masters", [])
+        page_info = result.get("pageInfo") or {}
+        total = page_info.get("totalCount")
+        if isinstance(total, int) and total > len(masters):
+            warn(f"VCF Operations reports {total} master(s) total, but only {len(masters)} were "
+                 f"fetched (page_size={page_size}). Increase --master-page-size to see the rest.")
+        LOG.debug(f"GET /api/salt/masters response body: {result}")
+        return masters
+
+    def create_minion(self, master_id: str, minion_public_key_pem: str) -> dict:
+        """POST /api/salt/minions
+        Body: {masterId, minionPublicKey}. The minion ID is always assigned
+        by VCF Operations - it is not accepted as request input. Response:
+        {minionId, masterId, minionPublicKey, masterPublicKey (base64),
+        masterFqdn, keyState}."""
         result = self._request(
-            "POST", f"/api/salt/minions/{minion_id}/trusted-keys",
+            "POST", "/api/salt/minions",
             json_body={"masterId": master_id, "minionPublicKey": minion_public_key_pem},
         )
-        LOG.debug(f"POST /api/salt/minions/{minion_id}/trusted-keys response body: {result}")
+        LOG.debug(f"POST /api/salt/minions response body: {result}")
         return result
 
 
 # --------------------------------------------------------------------------
-# Salt master_finger computation
+# Master selection
 # --------------------------------------------------------------------------
 
-def pem_finger(pem_text: str, sum_type: str = "sha256") -> str:
+def _is_healthy_master(master: dict) -> bool:
+    return (master.get("masterKeyState") or "").upper() == HEALTHY_KEY_STATE \
+        and (master.get("presenceStatus") or "").upper() == HEALTHY_PRESENCE
+
+
+def select_master(client: OpsClient, args: argparse.Namespace) -> dict:
+    """Lists every Salt master known to VCF Operations and either honors
+    --master-id (still validated against the live list) or prompts the user
+    to choose one interactively, by FQDN, with key/presence state shown so
+    an unusable master isn't picked by accident."""
+    if args.dry_run:
+        masters = [{
+            "masterId": "salt-master-<dry-run>",
+            "masterFqdn": "salt-master.example.com",
+            "masterKeyState": HEALTHY_KEY_STATE,
+            "presenceStatus": HEALTHY_PRESENCE,
+            "masterPublicKey": base64.b64encode(
+                b"-----BEGIN PUBLIC KEY-----\nAAAAAAAAAAAAAAAAAAAAAAAA\n-----END PUBLIC KEY-----").decode(),
+        }]
+    else:
+        try:
+            masters = client.list_masters(page_size=args.master_page_size)
+        except OpsApiError as e:
+            die(f"Could not list Salt masters: {e}")
+
+    if not masters:
+        die("No Salt masters are known to VCF Operations. Nothing to onboard against.")
+
+    print(f"\n{_C.BOLD}Available Salt masters{_C.RESET}")
+    print(f"{_C.DIM}{'-' * 92}{_C.RESET}")
+    print(f"  {'#':<3} {'FQDN':<38} {'Master ID':<28} {'Key State':<10} Presence")
+    for i, m in enumerate(masters, 1):
+        healthy = _is_healthy_master(m)
+        flag = "" if healthy else f"  {_C.YELLOW}<- not {HEALTHY_KEY_STATE}/{HEALTHY_PRESENCE}{_C.RESET}"
+        print(f"  {i:<3} {str(m.get('masterFqdn', '')):<38} {str(m.get('masterId', '')):<28} "
+              f"{str(m.get('masterKeyState', '')):<10} {str(m.get('presenceStatus', ''))}{flag}")
+    print(f"{_C.DIM}{'-' * 92}{_C.RESET}")
+
+    unhealthy_count = sum(1 for m in masters if not _is_healthy_master(m))
+    if unhealthy_count:
+        warn(f"{unhealthy_count} master(s) above are not {HEALTHY_KEY_STATE}/{HEALTHY_PRESENCE} - "
+             f"onboarding against one of them will likely fail, or leave the minion unable to "
+             f"connect even after trust is registered.")
+
+    chosen = None
+    if args.master_id:
+        chosen = next((m for m in masters if m.get("masterId") == args.master_id), None)
+        if chosen is None:
+            die(f"--master-id '{args.master_id}' was not found in the list above.")
+        LOG.debug(f"--master-id matched: {chosen}")
+    else:
+        while True:
+            raw = prompt("Select a master by number")
+            if raw.isdigit() and 1 <= int(raw) <= len(masters):
+                chosen = masters[int(raw) - 1]
+                break
+            print(f"  Please enter a number between 1 and {len(masters)}")
+
+    if not _is_healthy_master(chosen):
+        if not confirm(
+                f"'{chosen.get('masterFqdn')}' is not {HEALTHY_KEY_STATE}/{HEALTHY_PRESENCE} "
+                f"(state={chosen.get('masterKeyState')}, presence={chosen.get('presenceStatus')}). "
+                f"Proceed anyway?", default=False, assume_yes=args.yes):
+            die("Aborted by user.", code=0)
+
+    ok(f"Selected master: {chosen.get('masterId')} @ {chosen.get('masterFqdn')}")
+    return chosen
+
+
+# --------------------------------------------------------------------------
+# Minion RSA keypair generation
+# --------------------------------------------------------------------------
+
+def generate_minion_keypair(key_size: int, dry_run: bool) -> "tuple[str, str]":
     """
-    Reproduces Salt's own salt.utils.crypt.pem_finger(): strip the PEM
-    header/footer lines, base64-decode the body to raw DER bytes, hash them,
-    and format as colon-separated hex pairs - the exact string Salt expects
-    for `master_finger` / SALT_MASTER_FINGER.
+    Generates a fresh RSA keypair for the minion via `openssl` - the only
+    external tool this needs beyond docker/helm/kubectl, so no third-party
+    pip dependency is required. Returns (private_key_pem, public_key_pem).
+
+    The private key is generated here, in this process, and handed directly
+    to the minion's own runtime (an env var for Docker, a Kubernetes Secret
+    this script creates for you) - it is never sent to VCF Operations, and
+    never written to the console or the audit log.
     """
-    lines = [l for l in pem_text.strip().splitlines() if l.strip()]
-    if len(lines) < 3:
-        raise ValueError("Master public key does not look like a PEM block")
-    body = "".join(lines[1:-1])
-    der = base64.b64decode(body)
-    digest = hashlib.new(sum_type, der).hexdigest()
-    return ":".join(digest[i:i + 2] for i in range(0, len(digest), 2))
+    LOG.info(f"$ openssl genrsa {key_size}  (output not logged: private key material)")
+    if dry_run:
+        return (
+            "-----BEGIN PRIVATE KEY-----\n<dry-run - no key generated>\n-----END PRIVATE KEY-----\n",
+            "-----BEGIN PUBLIC KEY-----\n<dry-run - no key generated>\n-----END PUBLIC KEY-----\n",
+        )
+    try:
+        priv = subprocess.run(
+            ["openssl", "genrsa", str(key_size)],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        ).stdout
+    except FileNotFoundError:
+        die("Command not found: openssl. Install it and ensure it's on PATH.")
+        raise  # unreachable, keeps type-checkers happy
+    except subprocess.CalledProcessError as e:
+        die(f"Failed to generate the minion's RSA keypair: {e.stderr.strip()}")
+        raise  # unreachable
+
+    LOG.debug("$ openssl rsa -pubout")
+    try:
+        pub = subprocess.run(
+            ["openssl", "rsa", "-pubout"],
+            input=priv, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        ).stdout
+    except subprocess.CalledProcessError as e:
+        die(f"Failed to derive the minion's public key: {e.stderr.strip()}")
+        raise  # unreachable
+
+    return priv, pub
 
 
 # --------------------------------------------------------------------------
@@ -443,6 +556,8 @@ class DockerConfig:
     master_fqdn: str
     master_pubkey_b64: str
     minion_id: str
+    minion_private_key_b64: str
+    minion_public_key_b64: str
 
 
 def docker_container_exists(name: str, dry_run: bool) -> bool:
@@ -470,36 +585,31 @@ def docker_start(cfg: DockerConfig, dry_run: bool, assume_yes: bool = False) -> 
         "-e", f"SALT_MASTER={cfg.master_fqdn}",
         "-e", f"SALT_MASTER_PUBKEY_B64={cfg.master_pubkey_b64}",
         "-e", f"SALT_MINION_ID={cfg.minion_id}",
+        "-e", f"SALT_MINION_PRIVATE_KEY_B64={cfg.minion_private_key_b64}",
+        "-e", f"SALT_MINION_PUBLIC_KEY_B64={cfg.minion_public_key_b64}",
         "-v", f"{cfg.volume}:/etc/salt/pki/minion",
         cfg.image,
     ]
-    run(cmd, dry_run=dry_run)
+    printable = " ".join(
+        shlex.quote(c) if "PRIVATE_KEY_B64" not in c else "SALT_MINION_PRIVATE_KEY_B64=<redacted>"
+        for c in cmd
+    )
+    print(f"  $ {printable}")
+    LOG.debug(f"$ {printable}")
+    if dry_run:
+        return
+    try:
+        subprocess.run(cmd, check=True)
+    except FileNotFoundError:
+        die("Command not found: docker. Is it installed and on PATH?")
+    except subprocess.CalledProcessError as e:
+        die(f"Failed to start the minion container (exit {e.returncode}).")
 
 
 def docker_exec(container: str, args: list, dry_run: bool = False, check: bool = True,
                  timeout: float = None) -> str:
     return run(["docker", "exec", container] + args, dry_run=dry_run, capture=True, check=check,
                 timeout=timeout)
-
-
-def docker_read_minion_pubkey(container: str, timeout: int, dry_run: bool) -> str:
-    if dry_run:
-        return "-----BEGIN PUBLIC KEY-----\nAAAAAAAAAAAAAAAAAAAAAAAA\n-----END PUBLIC KEY-----"
-
-    result = {}
-
-    def _check() -> bool:
-        pubkey = docker_exec(container, ["cat", "/etc/salt/pki/minion/minion.pub"], check=False)
-        if pubkey.startswith("-----BEGIN PUBLIC KEY-----"):
-            result["pubkey"] = pubkey
-            return True
-        return False
-
-    if not wait_until(_check, timeout=timeout, check_interval=2,
-                       message="Waiting for minion to generate its keypair", dry_run=dry_run):
-        die(f"Timed out waiting for {container} to generate its minion keypair. "
-            f"Check `docker logs {container}`.")
-    return result["pubkey"]
 
 
 MINION_READY_LOG_MARKER = "Minion is ready to receive requests"
@@ -547,6 +657,32 @@ class HelmConfig:
     master_fqdn: str
     master_finger: str
     minion_id: str
+    minion_key_secret_name: str
+
+
+def kubectl_upsert_minion_key_secret(namespace: str, secret_name: str,
+                                      minion_private_key_b64: str, minion_public_key_b64: str,
+                                      dry_run: bool) -> None:
+    """
+    Creates or updates a Kubernetes Secret holding the minion's keypair -
+    the same "existing Secret, created out-of-band, never through Helm
+    values" pattern this chart already uses for pillar/vault secrets (Helm
+    values end up readable in `helm get values`/release history/Secrets;
+    a plain Secret object does not get any less secret for it, but at least
+    keeps this key out of the *release* history specifically).
+    """
+    manifest = {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {"name": secret_name, "namespace": namespace},
+        "type": "Opaque",
+        "stringData": {
+            "private-key-b64": minion_private_key_b64,
+            "public-key-b64": minion_public_key_b64,
+        },
+    }
+    run(["kubectl", "apply", "-f", "-"], dry_run=dry_run, capture=False, check=True,
+        input_data=json.dumps(manifest), redact_input_in_log=True)
 
 
 def helm_start(cfg: HelmConfig, dry_run: bool) -> None:
@@ -556,6 +692,7 @@ def helm_start(cfg: HelmConfig, dry_run: bool) -> None:
         "--set", f"salt.master={cfg.master_fqdn}",
         "--set", f"salt.masterFinger={cfg.master_finger}",
         "--set", f"salt.minionId={cfg.minion_id}",
+        "--set", f"salt.minionKeySecretName={cfg.minion_key_secret_name}",
         "--set", f"image.repository={cfg.image_repository}",
         "--set", f"image.tag={cfg.image_tag}",
     ]
@@ -592,26 +729,6 @@ def kubectl_exec(namespace: str, pod: str, args: list, dry_run: bool = False, ch
                dry_run=dry_run, capture=True, check=check, timeout=timeout)
 
 
-def kubectl_read_minion_pubkey(namespace: str, pod: str, timeout: int, dry_run: bool) -> str:
-    if dry_run:
-        return "-----BEGIN PUBLIC KEY-----\nAAAAAAAAAAAAAAAAAAAAAAAA\n-----END PUBLIC KEY-----"
-
-    result = {}
-
-    def _check() -> bool:
-        pubkey = kubectl_exec(namespace, pod, ["cat", "/etc/salt/pki/minion/minion.pub"], check=False)
-        if pubkey.startswith("-----BEGIN PUBLIC KEY-----"):
-            result["pubkey"] = pubkey
-            return True
-        return False
-
-    if not wait_until(_check, timeout=timeout, check_interval=2,
-                       message="Waiting for minion to generate its keypair", dry_run=dry_run):
-        die(f"Timed out waiting for {pod} to generate its minion keypair. "
-            f"Check `kubectl logs -n {namespace} {pod}`.")
-    return result["pubkey"]
-
-
 def kubectl_is_connected(namespace: str, pod: str, dry_run: bool) -> bool:
     if dry_run:
         return True
@@ -635,7 +752,7 @@ def kubectl_is_connected(namespace: str, pod: str, dry_run: bool) -> bool:
 # Main orchestration
 # --------------------------------------------------------------------------
 
-TOTAL_STEPS = 7
+TOTAL_STEPS = 6
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -648,14 +765,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="Suite API base path (default: /suite-api)")
     p.add_argument("--insecure", action="store_true",
                    help="Skip TLS certificate verification against VCF Operations")
-    p.add_argument("--vcf-instance-id", help="VCF instance resource UUID whose master to use")
+
+    p.add_argument("--master-id", help="Salt master ID to use (skips the interactive picker; "
+                                        "still validated against GET /api/salt/masters)")
+    p.add_argument("--master-page-size", type=int, default=1000,
+                   help="Max masters to fetch when listing (default: 1000)")
 
     p.add_argument("--deployment", choices=["docker", "kubernetes"],
                    help="Where to run the minion")
 
-    p.add_argument("--minion-id", help="Explicit minion ID (default: auto-generated)")
-    p.add_argument("--minion-id-prefix", default="ext-minion",
-                   help="Prefix for the auto-generated minion ID (default: ext-minion)")
+    p.add_argument("--key-size", type=int, default=2048,
+                   help="RSA key size (bits) for the minion's keypair (default: 2048, Salt's own default)")
 
     # Docker options. Defaults are intentionally None (not the literal
     # default value) so the script can tell "explicitly passed on the CLI"
@@ -673,7 +793,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--image-tag", help="[k8s] image tag (default: 0.1.0)")
 
     p.add_argument("--master-finger-algo", default="sha256", choices=["sha256", "md5"],
-                   help="Hash algorithm for master_finger (default: sha256, matches modern Salt)")
+                   help="[k8s] Hash algorithm for master_finger (default: sha256, matches modern Salt). "
+                        "The Docker path pre-seeds the master's actual public key instead and does not "
+                        "use this.")
     p.add_argument("--connect-timeout", type=int, default=300,
                    help="Seconds to wait for the minion to connect (default: 300)")
     p.add_argument("--poll-interval", type=int, default=5,
@@ -697,26 +819,71 @@ DEFAULT_IMAGE_REPOSITORY = "salt-minion-vcf"
 DEFAULT_IMAGE_TAG = "0.1.0"
 
 
-def onboard_one_minion(client: OpsClient, args: argparse.Namespace,
-                        master_id: str, master_fqdn: str, master_pubkey_b64: str, master_finger: str,
+def pem_finger(pem_text: str, sum_type: str = "sha256") -> str:
+    """
+    Reproduces Salt's own salt.utils.crypt.pem_finger(): strip the PEM
+    header/footer lines, base64-decode the body to raw DER bytes, hash them,
+    and format as colon-separated hex pairs - the exact string Salt expects
+    for `master_finger` / SALT_MASTER_FINGER. Only used by the Kubernetes/
+    Helm path today - the Docker path pre-seeds the master's actual public
+    key instead (see helm_start()/docker_start()).
+    """
+    import hashlib
+    lines = [l for l in pem_text.strip().splitlines() if l.strip()]
+    if len(lines) < 3:
+        raise ValueError("Master public key does not look like a PEM block")
+    body = "".join(lines[1:-1])
+    der = base64.b64decode(body)
+    digest = hashlib.new(sum_type, der).hexdigest()
+    return ":".join(digest[i:i + 2] for i in range(0, len(digest), 2))
+
+
+def onboard_one_minion(client: OpsClient, args: argparse.Namespace, master: dict,
                         deployment: str, defaults: dict, index: int) -> dict:
     """
-    Runs steps 4-7 for a single minion and returns a summary dict.
+    Runs steps 3-6 for a single minion and returns a summary dict.
 
     `index` counts minions onboarded in this session (starting at 1). CLI
-    flags for identity-bearing settings (minion ID, container/volume/release
-    name) are only honored on the first minion - a container name, PKI
-    volume, or Helm release can't be reused for a second minion without
-    colliding, so from the second minion onward this always prompts, with an
+    flags for identity-bearing settings (container/volume/release name) are
+    only honored on the first minion - a container name, PKI volume, or
+    Helm release can't be reused for a second minion without colliding, so
+    from the second minion onward this always prompts, with an
     auto-suffixed suggestion ("-2", "-3", ...) to avoid that collision.
     """
+    master_id = master["masterId"]
+    master_fqdn = master["masterFqdn"]
+    master_pubkey_b64 = master["masterPublicKey"]
+
+    # ---------------------------------------------------------------- Step 3
+    step(3, TOTAL_STEPS, "Generate the minion's RSA keypair")
+    minion_private_key_pem, minion_public_key_pem = generate_minion_keypair(
+        key_size=args.key_size, dry_run=args.dry_run)
+    ok(f"Generated a {args.key_size}-bit RSA keypair (private key never leaves this process)")
 
     # ---------------------------------------------------------------- Step 4
-    step(4, TOTAL_STEPS, "Start the minion")
-    suffix = "" if index == 1 else f"-{index}"
+    step(4, TOTAL_STEPS, "Register the minion's public key as trusted")
+    if not confirm(f"Register a new minion against master '{master_id}' @ {master_fqdn}?",
+                   assume_yes=args.yes):
+        die("Aborted by user.", code=0)
+    if args.dry_run:
+        minion_id = f"ext-minion-<dry-run-{index}>"
+        info(f"(dry-run) POST /api/salt/minions {{masterId: {master_id}, minionPublicKey: <PEM>}}")
+    else:
+        try:
+            create_result = client.create_minion(master_id, minion_public_key_pem)
+        except OpsApiError as e:
+            die(f"Failed to register the minion's key: {e}")
+        minion_id = create_result.get("minionId")
+        if not minion_id:
+            die(f"Registration reported success but returned no minionId: {create_result}")
+        key_state = (create_result.get("keyState") or "").upper()
+        if key_state and key_state != "TRUSTED":
+            die(f"Registration did not result in a trusted key (keyState={key_state}): {create_result}")
+    ok(f"Minion registered and trusted: {minion_id}")
 
-    minion_id = (args.minion_id if index == 1 else None) or prompt(
-        "Minion ID", default=f"{args.minion_id_prefix}-{uuid.uuid4()}")
+    # ---------------------------------------------------------------- Step 5
+    step(5, TOTAL_STEPS, "Start the minion")
+    suffix = "" if index == 1 else f"-{index}"
 
     if deployment == "docker":
         container_name = (args.container_name if index == 1 else None) or prompt(
@@ -737,7 +904,7 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace,
             ("Image", image),
             ("Container name", container_name),
             ("PKI volume", volume),
-            ("Salt master", f"{master_fqdn} (master pubkey pre-seeded)"),
+            ("Salt master", f"{master_fqdn} (master pubkey + minion keypair pre-seeded)"),
         ])
         if not confirm("Proceed with these settings?", assume_yes=args.yes):
             die("Aborted by user.", code=0)
@@ -745,11 +912,14 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace,
         docker_cfg = DockerConfig(
             image=image, container_name=container_name, volume=volume,
             master_fqdn=master_fqdn, master_pubkey_b64=master_pubkey_b64, minion_id=minion_id,
+            minion_private_key_b64=base64.b64encode(minion_private_key_pem.encode()).decode(),
+            minion_public_key_b64=base64.b64encode(minion_public_key_pem.encode()).decode(),
         )
         docker_start(docker_cfg, dry_run=args.dry_run, assume_yes=args.yes)
         ok(f"Container '{container_name}' started")
         defaults["image"] = image
         pod_name = None
+        namespace = None
     else:
         release_name = (args.release_name if index == 1 else None) or prompt(
             "Helm release name", default=f"{DEFAULT_RELEASE_NAME}{suffix}")
@@ -760,6 +930,10 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace,
         image_tag = args.image_tag or defaults.get("image_tag") or prompt(
             "Image tag", default=DEFAULT_IMAGE_TAG)
 
+        master_finger = pem_finger(
+            base64.b64decode(master_pubkey_b64).decode("utf-8"), sum_type=args.master_finger_algo)
+        minion_key_secret_name = f"{release_name}-minion-key"
+
         print_summary("Review before starting the minion", [
             ("Deployment", "kubernetes"),
             ("Minion ID", minion_id),
@@ -767,14 +941,24 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace,
             ("Namespace", namespace),
             ("Image", f"{image_repository}:{image_tag}"),
             ("Salt master", f"{master_fqdn} (master_finger computed)"),
+            ("Minion key secret", minion_key_secret_name),
         ])
         if not confirm("Proceed with these settings?", assume_yes=args.yes):
             die("Aborted by user.", code=0)
+
+        kubectl_upsert_minion_key_secret(
+            namespace, minion_key_secret_name,
+            minion_private_key_b64=base64.b64encode(minion_private_key_pem.encode()).decode(),
+            minion_public_key_b64=base64.b64encode(minion_public_key_pem.encode()).decode(),
+            dry_run=args.dry_run,
+        )
+        ok(f"Minion keypair Secret '{minion_key_secret_name}' created/updated in namespace {namespace}")
 
         helm_cfg = HelmConfig(
             chart_path=args.chart_path, release_name=release_name, namespace=namespace,
             image_repository=image_repository, image_tag=image_tag,
             master_fqdn=master_fqdn, master_finger=master_finger, minion_id=minion_id,
+            minion_key_secret_name=minion_key_secret_name,
         )
         helm_start(helm_cfg, dry_run=args.dry_run)
         ok(f"Helm release '{release_name}' installed/upgraded in namespace {namespace}")
@@ -784,33 +968,8 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace,
         pod_name = kubectl_get_pod_name(namespace, release_name, dry_run=args.dry_run)
         ok(f"Pod: {pod_name}")
 
-    # ---------------------------------------------------------------- Step 5
-    step(5, TOTAL_STEPS, "Read the minion's public key")
-    if deployment == "docker":
-        minion_pubkey_pem = docker_read_minion_pubkey(container_name, timeout=60, dry_run=args.dry_run)
-    else:
-        minion_pubkey_pem = kubectl_read_minion_pubkey(namespace, pod_name, timeout=60, dry_run=args.dry_run)
-    ok("Minion public key retrieved (private key never left the minion)")
-
     # ---------------------------------------------------------------- Step 6
-    step(6, TOTAL_STEPS, "Trust the minion's key against the master")
-    if not confirm(f"Register minion '{minion_id}' as trusted against master '{master_id}'?",
-                   assume_yes=args.yes):
-        die("Aborted by user.", code=0)
-    if args.dry_run:
-        info(f"(dry-run) POST /api/salt/minions/{minion_id}/trusted-keys "
-             f"{{masterId: {master_id}, minionPublicKey: <PEM>}}")
-    else:
-        try:
-            trust_result = client.add_trusted_key(minion_id, master_id, minion_pubkey_pem)
-        except OpsApiError as e:
-            die(f"Failed to register the trusted key: {e}")
-        if trust_result.get("status", "").upper() not in ("SUCCESS", ""):
-            die(f"Trust registration reported failure: {trust_result}")
-    ok("Minion key trusted with the Salt master")
-
-    # ---------------------------------------------------------------- Step 7
-    step(7, TOTAL_STEPS, "Wait for the minion to connect")
+    step(6, TOTAL_STEPS, "Wait for the minion to connect")
 
     def _connected() -> bool:
         if deployment == "docker":
@@ -819,10 +978,11 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace,
 
     connected = wait_until(_connected, timeout=args.connect_timeout,
                             check_interval=args.poll_interval,
-                            message="Waiting for the master to accept the minion", dry_run=args.dry_run)
+                            message="Waiting for the minion to connect", dry_run=args.dry_run)
     if not connected:
         die(f"Minion did not connect within {args.connect_timeout}s. "
-            f"Check the master's `salt-key -L` and the minion's logs.")
+            f"Trust was already registered (minion ID {minion_id}) - this points at a network/"
+            f"connectivity problem, not a trust problem. Check the minion's logs.")
     ok("Minion connected to the Salt master")
 
     return {"minion_id": minion_id, "deployment": deployment}
@@ -858,36 +1018,10 @@ def main() -> None:
     ok(f"Authenticated to {ops_host}")
 
     # ---------------------------------------------------------------- Step 2
-    step(2, TOTAL_STEPS, "Resolve the Salt master for your VCF instance")
-    vcf_instance_id = args.vcf_instance_id or prompt_uuid("VCF instance resource ID (UUID)")
+    step(2, TOTAL_STEPS, "List Salt masters and select one")
+    master = select_master(client, args)
 
-    if args.dry_run:
-        master = {"masterId": "salt-master-<dry-run>", "masterFqdn": "salt-master.example.com",
-                  "masterPublicKey": base64.b64encode(
-                      b"-----BEGIN PUBLIC KEY-----\nAAAAAAAAAAAAAAAAAAAAAAAA\n-----END PUBLIC KEY-----").decode()}
-    else:
-        try:
-            master = client.get_master_details(vcf_instance_id)
-        except OpsApiError as e:
-            die(f"Could not resolve master details: {e}")
-
-    master_id = master["masterId"]
-    master_fqdn = master["masterFqdn"]
-    master_pubkey_b64 = master["masterPublicKey"]
-    master_pubkey_pem = base64.b64decode(master_pubkey_b64).decode("utf-8")
-    ok(f"Master resolved: {master_id} @ {master_fqdn}")
-
-    # ---------------------------------------------------------------- Step 3
-    # Docker minions are pre-seeded with the master's actual public key
-    # (SALT_MASTER_PUBKEY_B64) rather than a fingerprint - see
-    # docker-entrypoint.sh for why. The fingerprint below is still computed
-    # for the Kubernetes/Helm path (which only supports master_finger today)
-    # and for your own reference/audit trail.
-    step(3, TOTAL_STEPS, "Compute master identity fingerprint")
-    master_finger = pem_finger(master_pubkey_pem, sum_type=args.master_finger_algo)
-    ok(f"master_finger ({args.master_finger_algo}): {master_finger}")
-
-    # ------------------------------------------------- Steps 4-7 (repeatable)
+    # ------------------------------------------------- Steps 3-6 (repeatable)
     deployment = args.deployment or choose(
         "\nWhere should this minion run?", ["docker", "kubernetes"], default="docker")
 
@@ -895,13 +1029,12 @@ def main() -> None:
     defaults: dict = {}
     index = 1
     while True:
-        result = onboard_one_minion(client, args, master_id, master_fqdn, master_pubkey_b64, master_finger,
-                                     deployment, defaults, index)
+        result = onboard_one_minion(client, args, master, deployment, defaults, index)
         onboarded.append(result)
 
         print(f"\n{_C.BOLD}{_C.GREEN}Minion onboarded{_C.RESET}")
         print(f"  Minion ID : {result['minion_id']}")
-        print(f"  Master    : {master_id} @ {master_fqdn}")
+        print(f"  Master    : {master.get('masterId')} @ {master.get('masterFqdn')}")
         print(f"  Deployment: {result['deployment']}")
         print(f"\nVerify from the Salt master:\n  salt '{result['minion_id']}' test.ping")
 

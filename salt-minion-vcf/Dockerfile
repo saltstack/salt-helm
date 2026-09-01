@@ -90,8 +90,11 @@ RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh /usr/local/bin/healthcheck.sh
 ENV SALT_MASTER="" \
     SALT_MASTER_PORT="4506" \
     SALT_PUBLISH_PORT="4505" \
+    SALT_MASTER_PUBKEY_B64="" \
     SALT_MINION_ID="" \
     SALT_MINION_ID_PREFIX="vcf-salt-executor" \
+    SALT_MINION_PRIVATE_KEY_B64="" \
+    SALT_MINION_PUBLIC_KEY_B64="" \
     SALT_MASTER_FINGER="" \
     SALT_LOG_LEVEL="info" \
     SALT_FILE_CLIENT_LOCAL="false" \

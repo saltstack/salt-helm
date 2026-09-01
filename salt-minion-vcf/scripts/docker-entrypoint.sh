@@ -18,6 +18,26 @@ if [ -z "${SALT_MINION_ID:-}" ]; then
   fi
 fi
 
+# Pre-seed the minion's own RSA keypair when supplied. vcf-ops-onboard.py now
+# generates this keypair and registers its public half as trusted via the
+# VCF Operations API *before* the minion ever starts - so the minion must be
+# handed that exact keypair rather than generating its own (which would not
+# match whatever key was already registered as trusted, and would just sit
+# untrusted). Independent of the master-side config model below (Docker/env
+# or Kubernetes/ConfigMap+Secret) - either can supply these two variables.
+#
+# Only applied when minion.pem doesn't already exist, so a restarted/
+# rescheduled container (persistent PKI volume) keeps its established
+# identity rather than re-seeding on every start.
+if [ ! -s /etc/salt/pki/minion/minion.pem ] \
+    && [ -n "${SALT_MINION_PRIVATE_KEY_B64:-}" ] && [ -n "${SALT_MINION_PUBLIC_KEY_B64:-}" ]; then
+  echo "${SALT_MINION_PRIVATE_KEY_B64}" | base64 -d > /etc/salt/pki/minion/minion.pem
+  chmod 0400 /etc/salt/pki/minion/minion.pem
+  echo "${SALT_MINION_PUBLIC_KEY_B64}" | base64 -d > /etc/salt/pki/minion/minion.pub
+  chmod 0644 /etc/salt/pki/minion/minion.pub
+  echo "Pre-seeded minion keypair (already registered as trusted)"
+fi
+
 # There are two supported configuration models:
 #   1. Docker/env: SALT_MASTER is supplied and this script writes master config.
 #   2. Kubernetes/ConfigMap: 10-master.conf is mounted by Kubernetes/Helm.
@@ -180,6 +200,7 @@ echo "===================================================="
 echo " Salt Minion VCF"
 echo "===================================================="
 echo "Minion ID       : ${SALT_MINION_ID}"
+echo "Minion Keypair  : $([ -n "${SALT_MINION_PRIVATE_KEY_B64:-}" ] && echo "pre-seeded (pre-registered as trusted)" || echo "self-generated on first start")"
 echo "Deployment Type : ${DEPLOYMENT_TYPE:-docker}"
 if [ -n "${SALT_MASTER:-}" ]; then
   echo "Salt Master     : ${SALT_MASTER}"
