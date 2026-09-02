@@ -121,6 +121,15 @@ grains:
   vcf_executor: true
   deployment_type: ${DEPLOYMENT_TYPE:-docker}
   managed_by: salt-minion-vcf
+  # VCF Operations' minion listing (GET /api/salt/minions) surfaces this as
+  # resourceKind, read via a bulk get_minion_details grains lookup - it is
+  # null until this grain is set and synced to the master, which is exactly
+  # what this line does on every start of this image. "external" (rather
+  # than a real component kind like vcenter/sddcm) reflects that this is a
+  # generic, user-managed executor minion, not a VCF appliance component -
+  # see vcf_grain_keys.py in config-modules for the full set of recognized
+  # component kinds.
+  vcfops_resource_kind: ${VCFOPS_RESOURCE_KIND:-external}
 EOF
 
 # Opt-in: make ALL pillar compiles (including those for jobs dispatched from

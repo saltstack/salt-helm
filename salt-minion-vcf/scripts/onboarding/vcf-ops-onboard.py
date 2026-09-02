@@ -2,42 +2,59 @@
 """
 vcf-ops-onboard.py
 
-Interactive onboarding tool that registers a new externally managed Salt
-minion against a VCF Operations-managed Salt master, then brings up a
-salt-minion-vcf instance (Docker or Kubernetes/Helm) that is already
-trusted on first connect.
+Interactive tool for managing externally managed Salt minions against a VCF
+Operations-managed Salt master. Supports three actions (--action, or picked
+interactively):
 
-Flow:
-  1. Prompt for VCF Operations (Suite API) connection details and log in.
-  2. List every Salt master known to VCF Operations
-     (GET /api/salt/masters) and interactively select one - by FQDN, with
-     its key/presence state shown so you don't pick a master that isn't
-     actually usable.
-  3. Generate a fresh RSA keypair for the minion, locally, via `openssl`.
-     The private key never leaves this process except to be handed
-     directly to the minion's own runtime (an env var for Docker, or a
-     Kubernetes Secret this script creates for you) - it is never sent to
-     VCF Operations, and never written to the console or the audit log.
-  4. Register the minion's public key as trusted against the selected
-     master (POST /api/salt/minions). The minion ID is always assigned by
-     VCF Operations, not chosen here - the response is the first time this
-     script (or you) learns what it is.
-  5. Start the minion (docker run, or helm install/upgrade), pre-seeded
-     with that exact keypair and minion ID, and with the master's actual
-     public key (not just its fingerprint) so it trusts the master
-     directly on first connect - the same approach VCF's own internal
-     component minions use. Because the trust relationship was already
-     established in step 4 *before* the minion ever starts, there is no
-     manual `salt-key -a` step and no waiting-for-acceptance window.
-  6. Poll the minion (already retrying in the background) until it
-     connects, primarily by watching its logs for the event-driven "Minion
-     is ready to receive requests" line, falling back to a time-boxed
-     `salt-call status.master` (the same check the image's own healthcheck/
-     readiness probe uses, but that check alone can hang or under-report -
-     see the comments on docker_is_connected()/kubectl_is_connected()).
+  configure - registers a NEW minion's key as trusted, then brings up a
+              salt-minion-vcf instance (Docker or Kubernetes/Helm) that is
+              already trusted on first connect.
+      1. Prompt for VCF Operations (Suite API) connection details and log in.
+      2. List every Salt master known to VCF Operations
+         (GET /api/salt/masters) and interactively select one - by FQDN, with
+         its key/presence state shown so you don't pick a master that isn't
+         actually usable.
+      3. Generate a fresh RSA keypair for the minion, locally, via `openssl`.
+         The private key never leaves this process except to be handed
+         directly to the minion's own runtime (an env var for Docker, or a
+         Kubernetes Secret this script creates for you) - it is never sent to
+         VCF Operations, and never written to the console or the audit log.
+      4. Register the minion's public key as trusted against the selected
+         master (POST /api/salt/minions). The minion ID is always assigned by
+         VCF Operations, not chosen here - the response is the first time this
+         script (or you) learns what it is.
+      5. Start the minion (docker run, or helm install/upgrade), pre-seeded
+         with that exact keypair and minion ID, and with the master's actual
+         public key (not just its fingerprint) so it trusts the master
+         directly on first connect - the same approach VCF's own internal
+         component minions use. Because the trust relationship was already
+         established in step 4 *before* the minion ever starts, there is no
+         manual `salt-key -a` step and no waiting-for-acceptance window.
+      6. Poll the minion (already retrying in the background) until it
+         connects, primarily by watching its logs for the event-driven "Minion
+         is ready to receive requests" line, falling back to a time-boxed
+         `salt-call status.master` (the same check the image's own healthcheck/
+         readiness probe uses, but that check alone can hang or under-report -
+         see the comments on docker_is_connected()/kubectl_is_connected()).
+      Steps 3-6 can be repeated for multiple minions in one session without
+      re-entering VCF Operations credentials or re-listing masters.
 
-Steps 3-6 can be repeated for multiple minions in one session without
-re-entering VCF Operations credentials or re-listing masters.
+  rotate    - rotates the key of an ALREADY-onboarded minion. The minion is
+              identified by its CURRENT public key (read straight off the
+              running container/pod's PKI dir), not by minion ID - the rotate
+              API (POST /api/salt/minions/rotate) never accepts minion ID as
+              input either. A fresh keypair is generated, registered via the
+              rotate API (which re-registers the SAME minion record, RaaS-side,
+              with the new key), and the running instance is then given the
+              new keypair and restarted: the container is recreated for
+              Docker (env vars are fixed at container creation, so this is
+              the only way to feed it a new keypair), or the Pod's key Secret
+              is updated and the Pod is deleted/recreated for Kubernetes.
+
+  list      - a read-only listing of trusted minions (GET /api/salt/minions),
+              including each minion's live presence status and resourceKind
+              (its vcfops_resource_kind grain, if it has reported one) - handy
+              for finding a minion's master/state before rotating its key.
 
 Every step is written to a timestamped log file (default:
 vcf-ops-onboard-<timestamp>.log) in addition to the interactive console
@@ -424,6 +441,46 @@ class OpsClient:
         LOG.debug(f"POST /api/salt/minions response body: {result}")
         return result
 
+    def rotate_minion_key(self, master_id: str, current_minion_public_key_pem: str,
+                           new_minion_public_key_pem: str) -> dict:
+        """POST /api/salt/minions/rotate
+        Body: {masterId, currentMinionPublicKey, newMinionPublicKey}. The
+        minion to rotate is never identified by minionId - it is resolved
+        server-side from currentMinionPublicKey instead, then re-registered
+        with newMinionPublicKey. Response: {minionId, masterId,
+        minionPublicKey, masterPublicKey (base64), masterFqdn, keyState} -
+        the same shape as create_minion()'s response."""
+        result = self._request(
+            "POST", "/api/salt/minions/rotate",
+            json_body={
+                "masterId": master_id,
+                "currentMinionPublicKey": current_minion_public_key_pem,
+                "newMinionPublicKey": new_minion_public_key_pem,
+            },
+        )
+        LOG.debug(f"POST /api/salt/minions/rotate response body: {result}")
+        return result
+
+    def list_minions(self, state: Optional[str] = None, page_size: int = 1000) -> list:
+        """GET /api/salt/minions -> a page of
+        {minionId, masterId, minionPublicKey, keyState, presenceStatus,
+        resourceKind, description, createdAt, updatedAt, acceptedAt,
+        rejectedAt}. resourceKind is the minion's vcfops_resource_kind grain
+        (e.g. "vcenter", "sddcm") - null until the minion's own bootstrap
+        sets it and it syncs to the master."""
+        params = {"page": 0, "pageSize": page_size}
+        if state:
+            params["state"] = state
+        result = self._request("GET", "/api/salt/minions", params=params)
+        minions = result.get("minions", [])
+        page_info = result.get("pageInfo") or {}
+        total = page_info.get("totalCount")
+        if isinstance(total, int) and total > len(minions):
+            warn(f"VCF Operations reports {total} minion(s) total, but only {len(minions)} were "
+                 f"fetched (page_size={page_size}). Increase --minion-page-size to see the rest.")
+        LOG.debug(f"GET /api/salt/minions response body: {result}")
+        return minions
+
 
 # --------------------------------------------------------------------------
 # Master selection
@@ -643,6 +700,69 @@ def docker_is_connected(container: str, dry_run: bool) -> bool:
     return out.strip().lower() == "true"
 
 
+PKI_MINION_PEM = "/etc/salt/pki/minion/minion.pem"
+PKI_MINION_PUB = "/etc/salt/pki/minion/minion.pub"
+
+
+def docker_read_minion_pubkey(container: str, dry_run: bool) -> str:
+    """Reads the minion's CURRENT public key straight off the running
+    container's PKI dir - this is what identifies which trust record to
+    rotate server-side (see OpsClient.rotate_minion_key), since minionId is
+    never exposed as an input."""
+    if dry_run:
+        return "-----BEGIN PUBLIC KEY-----\n<dry-run - current key>\n-----END PUBLIC KEY-----\n"
+    out = docker_exec(container, ["cat", PKI_MINION_PUB], check=False)
+    if not out.strip():
+        die(f"Could not read the current public key from '{container}:{PKI_MINION_PUB}'. "
+            f"Is the container running and already onboarded?")
+    return out
+
+
+def docker_read_configured_master_fqdn(container: str, dry_run: bool) -> Optional[str]:
+    """Best-effort read of the minion's currently configured master FQDN, so
+    the rotate flow can warn if the user is about to select a *different*
+    master than the one this minion is actually trusted against."""
+    if dry_run:
+        return None
+    out = docker_exec(
+        container,
+        ["sh", "-c", "grep -m1 '^master:' /etc/salt/minion.d/10-master.conf 2>/dev/null || true"],
+        check=False,
+    )
+    return out.split(":", 1)[1].strip() if out.startswith("master:") else None
+
+
+def docker_clear_minion_keys(container: str, dry_run: bool) -> None:
+    """Removes the minion's PKI files from the (persistent, named) volume
+    while the OLD container still exists to exec into. Required before
+    recreating the container with a new keypair - docker-entrypoint.sh only
+    seeds SALT_MINION_PRIVATE_KEY_B64/PUBLIC_KEY_B64 into the PKI dir when
+    minion.pem doesn't already exist, and `docker rm` alone does not remove
+    the named volume's contents."""
+    run(["docker", "exec", container, "rm", "-f", PKI_MINION_PEM, PKI_MINION_PUB],
+        dry_run=dry_run, check=False)
+
+
+def docker_inspect_minion(container: str, dry_run: bool) -> dict:
+    """Reads back the image and PKI volume of an already-running container,
+    so rotate can recreate it identically (aside from the keypair) without
+    asking the user to re-supply --image/--volume from memory."""
+    if dry_run:
+        return {"image": DEFAULT_IMAGE, "volume": DEFAULT_VOLUME}
+    out = run(["docker", "inspect", container], dry_run=dry_run, capture=True, check=True)
+    data = json.loads(out)[0]
+    image = data["Config"]["Image"]
+    volume = None
+    for mount in data.get("Mounts", []):
+        if mount.get("Destination") == "/etc/salt/pki/minion":
+            volume = mount.get("Name") or mount.get("Source")
+            break
+    if not volume:
+        die(f"Could not determine the PKI volume mounted on container '{container}' "
+            f"(expected a mount at /etc/salt/pki/minion).")
+    return {"image": image, "volume": volume}
+
+
 # --------------------------------------------------------------------------
 # Kubernetes / Helm deployment
 # --------------------------------------------------------------------------
@@ -748,17 +868,56 @@ def kubectl_is_connected(namespace: str, pod: str, dry_run: bool) -> bool:
     return out.strip().lower() == "true"
 
 
+def kubectl_read_minion_pubkey(namespace: str, pod: str, dry_run: bool) -> str:
+    """See docker_read_minion_pubkey() - same purpose, Kubernetes path."""
+    if dry_run:
+        return "-----BEGIN PUBLIC KEY-----\n<dry-run - current key>\n-----END PUBLIC KEY-----\n"
+    out = kubectl_exec(namespace, pod, ["cat", PKI_MINION_PUB], check=False)
+    if not out.strip():
+        die(f"Could not read the current public key from pod '{pod}':{PKI_MINION_PUB}. "
+            f"Is it running and already onboarded?")
+    return out
+
+
+def kubectl_read_configured_master_fqdn(namespace: str, pod: str, dry_run: bool) -> Optional[str]:
+    """See docker_read_configured_master_fqdn() - same purpose, Kubernetes path."""
+    if dry_run:
+        return None
+    out = kubectl_exec(
+        namespace, pod,
+        ["sh", "-c", "grep -m1 '^master:' /etc/salt/minion.d/10-master.conf 2>/dev/null || true"],
+        check=False,
+    )
+    return out.split(":", 1)[1].strip() if out.startswith("master:") else None
+
+
+def kubectl_clear_minion_keys(namespace: str, pod: str, dry_run: bool) -> None:
+    """See docker_clear_minion_keys() - same purpose. Necessary when the pki
+    volume is a PersistentVolumeClaim (persistence.enabled=true in the Helm
+    chart), since a Pod restart alone would keep the OLD keypair on disk; a
+    no-op if pki is an emptyDir (deleting the Pod already wipes it)."""
+    kubectl_exec(namespace, pod, ["rm", "-f", PKI_MINION_PEM, PKI_MINION_PUB], dry_run=dry_run, check=False)
+
+
 # --------------------------------------------------------------------------
 # Main orchestration
 # --------------------------------------------------------------------------
 
-TOTAL_STEPS = 6
+CONFIGURE_TOTAL_STEPS = 6
+ROTATE_TOTAL_STEPS = 4
+LIST_TOTAL_STEPS = 2
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Onboard a salt-minion-vcf instance against a VCF Operations-managed Salt master.",
+        description="Configure, rotate, or list salt-minion-vcf instances against a "
+                    "VCF Operations-managed Salt master.",
     )
+    p.add_argument("--action", choices=["configure", "rotate", "list"],
+                   help="What to do: 'configure' onboards a new minion (default), 'rotate' rotates an "
+                        "already-onboarded minion's key, 'list' prints trusted minions known to VCF "
+                        "Operations. Prompted interactively if omitted.")
+
     p.add_argument("--ops-host", help="VCF Operations FQDN or IP")
     p.add_argument("--ops-user", help="VCF Operations username")
     p.add_argument("--ops-base-path", default="/suite-api",
@@ -770,6 +929,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                                         "still validated against GET /api/salt/masters)")
     p.add_argument("--master-page-size", type=int, default=1000,
                    help="Max masters to fetch when listing (default: 1000)")
+    p.add_argument("--minion-page-size", type=int, default=1000,
+                   help="[list] Max minions to fetch when listing (default: 1000)")
+    p.add_argument("--state", choices=["TRUSTED", "REJECTED"],
+                   help="[list] Filter minions by trust state")
 
     p.add_argument("--deployment", choices=["docker", "kubernetes"],
                    help="Where to run the minion")
@@ -855,13 +1018,13 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace, master: dict
     master_pubkey_b64 = master["masterPublicKey"]
 
     # ---------------------------------------------------------------- Step 3
-    step(3, TOTAL_STEPS, "Generate the minion's RSA keypair")
+    step(3, CONFIGURE_TOTAL_STEPS, "Generate the minion's RSA keypair")
     minion_private_key_pem, minion_public_key_pem = generate_minion_keypair(
         key_size=args.key_size, dry_run=args.dry_run)
     ok(f"Generated a {args.key_size}-bit RSA keypair (private key never leaves this process)")
 
     # ---------------------------------------------------------------- Step 4
-    step(4, TOTAL_STEPS, "Register the minion's public key as trusted")
+    step(4, CONFIGURE_TOTAL_STEPS, "Register the minion's public key as trusted")
     if not confirm(f"Register a new minion against master '{master_id}' @ {master_fqdn}?",
                    assume_yes=args.yes):
         die("Aborted by user.", code=0)
@@ -882,7 +1045,7 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace, master: dict
     ok(f"Minion registered and trusted: {minion_id}")
 
     # ---------------------------------------------------------------- Step 5
-    step(5, TOTAL_STEPS, "Start the minion")
+    step(5, CONFIGURE_TOTAL_STEPS, "Start the minion")
     suffix = "" if index == 1 else f"-{index}"
 
     if deployment == "docker":
@@ -969,7 +1132,7 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace, master: dict
         ok(f"Pod: {pod_name}")
 
     # ---------------------------------------------------------------- Step 6
-    step(6, TOTAL_STEPS, "Wait for the minion to connect")
+    step(6, CONFIGURE_TOTAL_STEPS, "Wait for the minion to connect")
 
     def _connected() -> bool:
         if deployment == "docker":
@@ -988,19 +1151,209 @@ def onboard_one_minion(client: OpsClient, args: argparse.Namespace, master: dict
     return {"minion_id": minion_id, "deployment": deployment}
 
 
+# --------------------------------------------------------------------------
+# List trusted minions
+# --------------------------------------------------------------------------
+
+def list_minions_action(client: OpsClient, args: argparse.Namespace) -> None:
+    step(2, LIST_TOTAL_STEPS, "List trusted minions")
+    if args.dry_run:
+        minions = [{
+            "minionId": "<dry-run-minion-id>", "masterId": "salt-master-<dry-run>",
+            "keyState": "TRUSTED", "presenceStatus": "PRESENT", "resourceKind": None,
+        }]
+    else:
+        try:
+            minions = client.list_minions(state=args.state, page_size=args.minion_page_size)
+        except OpsApiError as e:
+            die(f"Could not list minions: {e}")
+
+    if not minions:
+        info("No trusted minions are known to VCF Operations.")
+        return
+
+    print(f"\n{_C.BOLD}Trusted minions{_C.RESET}")
+    print(f"{_C.DIM}{'-' * 110}{_C.RESET}")
+    print(f"  {'Minion ID':<38} {'Master ID':<28} {'Key State':<10} {'Presence':<10} Resource Kind")
+    for m in minions:
+        print(f"  {str(m.get('minionId', '')):<38} {str(m.get('masterId', '')):<28} "
+              f"{str(m.get('keyState', '')):<10} {str(m.get('presenceStatus', '')):<10} "
+              f"{m.get('resourceKind') or '(unknown)'}")
+    print(f"{_C.DIM}{'-' * 110}{_C.RESET}")
+    ok(f"Listed {len(minions)} minion(s)")
+
+
+# --------------------------------------------------------------------------
+# Rotate an already-onboarded minion's key
+# --------------------------------------------------------------------------
+
+def _confirm_master_matches(configured_fqdn: Optional[str], master: dict, assume_yes: bool) -> None:
+    """Warns (and asks for confirmation) if the master picked for rotation
+    doesn't match the master this minion is actually configured against -
+    the rotate API re-associates the minion with whichever masterId is
+    passed, so picking the wrong one would silently move the minion, not
+    just rotate its key."""
+    if not configured_fqdn:
+        return
+    if configured_fqdn == master.get("masterFqdn"):
+        return
+    if not confirm(
+            f"This minion is currently configured against master '{configured_fqdn}', but you selected "
+            f"'{master.get('masterFqdn')}'. Rotating against a different master also RE-ASSOCIATES the "
+            f"minion's trust record with it. Continue anyway?", default=False, assume_yes=assume_yes):
+        die("Aborted by user.", code=0)
+
+
+def rotate_minion_docker(client: OpsClient, args: argparse.Namespace) -> None:
+    step(2, ROTATE_TOTAL_STEPS, "Identify the minion and read its current key")
+    container = args.container_name or prompt("Container name to rotate", default=DEFAULT_CONTAINER_NAME)
+    if not args.dry_run and not docker_container_exists(container, args.dry_run):
+        die(f"No container named '{container}' found.")
+
+    current_pub = docker_read_minion_pubkey(container, args.dry_run)
+    ok(f"Read current public key from '{container}'")
+    configured_fqdn = docker_read_configured_master_fqdn(container, args.dry_run)
+    if configured_fqdn:
+        info(f"This minion is currently configured against master FQDN: {configured_fqdn}")
+
+    master = select_master(client, args)
+    _confirm_master_matches(configured_fqdn, master, args.yes)
+
+    step(3, ROTATE_TOTAL_STEPS, "Generate a new keypair and rotate the trusted key")
+    new_priv, new_pub = generate_minion_keypair(key_size=args.key_size, dry_run=args.dry_run)
+    ok(f"Generated a new {args.key_size}-bit RSA keypair")
+
+    if not confirm(f"Rotate the key for '{container}' against master '{master.get('masterId')}'? "
+                    f"The container will be recreated to pick up the new key.", assume_yes=args.yes):
+        die("Aborted by user.", code=0)
+
+    if args.dry_run:
+        minion_id = "<dry-run-minion-id>"
+        info("(dry-run) POST /api/salt/minions/rotate")
+    else:
+        try:
+            result = client.rotate_minion_key(master["masterId"], current_pub, new_pub)
+        except OpsApiError as e:
+            die(f"Failed to rotate the minion's key: {e}")
+        minion_id = result.get("minionId")
+        key_state = (result.get("keyState") or "").upper()
+        if key_state and key_state != "TRUSTED":
+            die(f"Rotation did not result in a trusted key (keyState={key_state}): {result}")
+    ok(f"Key rotated and trusted for minion: {minion_id}")
+
+    step(4, ROTATE_TOTAL_STEPS, "Recreate the container with the new key and wait for reconnect")
+    inspected = docker_inspect_minion(container, args.dry_run)
+    info(f"Recreating '{container}' (image={inspected['image']}, volume={inspected['volume']})")
+    # Clear the OLD PKI files while the container still exists to exec into -
+    # docker rm does not touch the named volume's contents, and the
+    # entrypoint only re-seeds when minion.pem is absent (see
+    # docker_clear_minion_keys()).
+    docker_clear_minion_keys(container, args.dry_run)
+    run(["docker", "rm", "-f", container], dry_run=args.dry_run)
+
+    docker_cfg = DockerConfig(
+        image=inspected["image"], container_name=container, volume=inspected["volume"],
+        master_fqdn=master["masterFqdn"], master_pubkey_b64=master["masterPublicKey"], minion_id=minion_id,
+        minion_private_key_b64=base64.b64encode(new_priv.encode()).decode(),
+        minion_public_key_b64=base64.b64encode(new_pub.encode()).decode(),
+    )
+    docker_start(docker_cfg, dry_run=args.dry_run, assume_yes=True)
+    ok(f"Container '{container}' restarted with the new keypair")
+
+    connected = wait_until(lambda: docker_is_connected(container, args.dry_run),
+                            timeout=args.connect_timeout, check_interval=args.poll_interval,
+                            message="Waiting for the minion to reconnect", dry_run=args.dry_run)
+    if not connected:
+        die(f"Minion did not reconnect within {args.connect_timeout}s after rotation. "
+            f"The key was already rotated (minion ID {minion_id}) - this points at a network/"
+            f"connectivity problem, not a trust problem. Check the container's logs.")
+    ok("Minion reconnected with the new key")
+
+
+def rotate_minion_kubernetes(client: OpsClient, args: argparse.Namespace) -> None:
+    step(2, ROTATE_TOTAL_STEPS, "Identify the minion and read its current key")
+    release_name = args.release_name or prompt("Helm release name to rotate", default=DEFAULT_RELEASE_NAME)
+    namespace = args.namespace or prompt("Namespace", default=DEFAULT_NAMESPACE)
+    pod_name = kubectl_get_pod_name(namespace, release_name, dry_run=args.dry_run)
+
+    current_pub = kubectl_read_minion_pubkey(namespace, pod_name, args.dry_run)
+    ok(f"Read current public key from pod '{pod_name}'")
+    configured_fqdn = kubectl_read_configured_master_fqdn(namespace, pod_name, args.dry_run)
+    if configured_fqdn:
+        info(f"This minion is currently configured against master FQDN: {configured_fqdn}")
+
+    master = select_master(client, args)
+    _confirm_master_matches(configured_fqdn, master, args.yes)
+
+    step(3, ROTATE_TOTAL_STEPS, "Generate a new keypair and rotate the trusted key")
+    new_priv, new_pub = generate_minion_keypair(key_size=args.key_size, dry_run=args.dry_run)
+    ok(f"Generated a new {args.key_size}-bit RSA keypair")
+
+    if not confirm(f"Rotate the key for release '{release_name}' (pod {pod_name}) against master "
+                    f"'{master.get('masterId')}'? The Pod will be restarted.", assume_yes=args.yes):
+        die("Aborted by user.", code=0)
+
+    if args.dry_run:
+        minion_id = "<dry-run-minion-id>"
+        info("(dry-run) POST /api/salt/minions/rotate")
+    else:
+        try:
+            result = client.rotate_minion_key(master["masterId"], current_pub, new_pub)
+        except OpsApiError as e:
+            die(f"Failed to rotate the minion's key: {e}")
+        minion_id = result.get("minionId")
+        key_state = (result.get("keyState") or "").upper()
+        if key_state and key_state != "TRUSTED":
+            die(f"Rotation did not result in a trusted key (keyState={key_state}): {result}")
+    ok(f"Key rotated and trusted for minion: {minion_id}")
+
+    step(4, ROTATE_TOTAL_STEPS, "Update the Secret, restart the Pod, and wait for reconnect")
+    minion_key_secret_name = f"{release_name}-minion-key"
+    kubectl_upsert_minion_key_secret(
+        namespace, minion_key_secret_name,
+        minion_private_key_b64=base64.b64encode(new_priv.encode()).decode(),
+        minion_public_key_b64=base64.b64encode(new_pub.encode()).decode(),
+        dry_run=args.dry_run,
+    )
+    ok(f"Minion keypair Secret '{minion_key_secret_name}' updated with the new keypair")
+
+    # Clear any persisted PKI files before restarting - see
+    # kubectl_clear_minion_keys() for why this matters when persistence is
+    # enabled (PVC-backed pki volume).
+    kubectl_clear_minion_keys(namespace, pod_name, args.dry_run)
+    run(["kubectl", "delete", "pod", "-n", namespace, pod_name], dry_run=args.dry_run)
+    ok(f"Pod '{pod_name}' restart triggered")
+
+    new_pod_name = kubectl_get_pod_name(namespace, release_name, dry_run=args.dry_run)
+    connected = wait_until(lambda: kubectl_is_connected(namespace, new_pod_name, args.dry_run),
+                            timeout=args.connect_timeout, check_interval=args.poll_interval,
+                            message="Waiting for the minion to reconnect", dry_run=args.dry_run)
+    if not connected:
+        die(f"Minion did not reconnect within {args.connect_timeout}s after rotation. "
+            f"The key was already rotated (minion ID {minion_id}) - check pod {new_pod_name}'s logs.")
+    ok("Minion reconnected with the new key")
+
+
 def main() -> None:
     args = build_arg_parser().parse_args()
     log_file = args.log_file or f"vcf-ops-onboard-{datetime.now():%Y%m%d-%H%M%S}.log"
     setup_logging(log_file, verbose=args.verbose)
     LOG.info(f"vcf-ops-onboard started, args={vars(args)}")
 
-    print(f"{_C.BOLD}VCF Operations - External Minion Onboarding{_C.RESET}")
+    print(f"{_C.BOLD}VCF Operations - External Minion Management{_C.RESET}")
     info(f"Logging full step-by-step detail to: {log_file}")
     if args.dry_run:
         warn("Running in --dry-run mode: nothing will actually be executed.")
 
+    # Chosen up front (before Step 1 is printed) so the "STEP n/total" header
+    # can show the right total for whichever action is picked.
+    action = args.action or choose(
+        "\nWhat would you like to do?", ["configure", "rotate", "list"], default="configure")
+    total_steps = {"configure": CONFIGURE_TOTAL_STEPS, "rotate": ROTATE_TOTAL_STEPS,
+                   "list": LIST_TOTAL_STEPS}[action]
+
     # ---------------------------------------------------------------- Step 1
-    step(1, TOTAL_STEPS, "Connect to VCF Operations")
+    step(1, total_steps, "Connect to VCF Operations")
     ops_host = args.ops_host or prompt("VCF Operations FQDN or IP")
     ops_user = args.ops_user or prompt("Username")
     ops_password = prompt("Password", secret=True)
@@ -1017,8 +1370,24 @@ def main() -> None:
             die(f"Login failed: {e}")
     ok(f"Authenticated to {ops_host}")
 
-    # ---------------------------------------------------------------- Step 2
-    step(2, TOTAL_STEPS, "List Salt masters and select one")
+    if action == "list":
+        list_minions_action(client, args)
+        print(f"\nFull audit log: {log_file}")
+        return
+
+    if action == "rotate":
+        deployment = args.deployment or choose(
+            "\nWhere is the minion currently running?", ["docker", "kubernetes"], default="docker")
+        if deployment == "docker":
+            rotate_minion_docker(client, args)
+        else:
+            rotate_minion_kubernetes(client, args)
+        print(f"\n{_C.BOLD}{_C.GREEN}Minion key rotated{_C.RESET}")
+        print(f"\nFull audit log: {log_file}")
+        return
+
+    # ------------------------------------------------------- action == "configure"
+    step(2, total_steps, "List Salt masters and select one")
     master = select_master(client, args)
 
     # ------------------------------------------------- Steps 3-6 (repeatable)

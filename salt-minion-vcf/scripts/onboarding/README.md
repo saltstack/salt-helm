@@ -1,12 +1,18 @@
 # VCF Operations Onboarding Script
 
-`vcf-ops-onboard.py` is an interactive tool that brings up a `salt-minion-vcf`
-instance (Docker **or** Kubernetes/Helm) and registers it as a trusted minion
-against a Salt master managed by VMware VCF Operations - without the
-minion's private key ever leaving the minion, and without VCF Operations
-credentials ever reaching the minion itself.
+`vcf-ops-onboard.py` is an interactive tool for managing `salt-minion-vcf`
+instances (Docker **or** Kubernetes/Helm) against a Salt master managed by
+VMware VCF Operations - without the minion's private key ever leaving the
+minion, and without VCF Operations credentials ever reaching the minion
+itself. It supports three actions, picked with `--action` or interactively:
 
-## What it does
+- **configure** (default) - bring up a *new* minion, already trusted on first
+  connect.
+- **rotate** - rotate the key of an *already-onboarded* minion.
+- **list** - read-only listing of trusted minions (master, key/presence
+  state, resourceKind), handy before rotating one.
+
+## configure: what it does
 
 ```text
 1. Log in to VCF Operations
@@ -32,6 +38,40 @@ there's no waiting-for-acceptance window and no human needing to run
 
 Steps 3-6 can be repeated for multiple minions in one session without
 re-entering VCF Operations credentials or re-listing masters.
+
+## rotate: what it does
+
+```text
+1. Log in to VCF Operations
+2. Identify the running minion (container name, or Helm release/namespace)
+   and read its CURRENT public key straight off its PKI dir - this is how
+   the minion is identified server-side too, since the rotate API never
+   accepts a minion ID as input. Then pick the Salt master to rotate
+   against (normally the SAME one the minion is already configured for -
+   picking a different one re-associates the minion's trust record with it,
+   and the script warns before letting that happen)
+3. Generate a fresh RSA keypair locally, and call the rotate API
+   (POST /api/salt/minions/rotate) with the current and new public keys.
+   VCF Operations resolves the existing trust record from the current key
+   and re-registers it in place with the new one
+4. Push the new keypair into the running instance and restart it:
+   - Docker: the container is recreated (env vars holding the keypair are
+     fixed at container creation, so this is the only way to feed it a new
+     one); the PKI volume's old key files are cleared first so the fresh
+     env vars actually get picked up
+   - Kubernetes: the minion's key Secret is updated, any persisted PKI files
+     on the Pod are cleared (relevant when `persistence.enabled=true`), and
+     the Pod is deleted so it's recreated with the new key
+   Then poll until the master accepts the new connection, same as configure.
+```
+
+## list: what it does
+
+A single read-only call to `GET /api/salt/minions`, printed as a table of
+minion ID, master ID, key state, presence, and resourceKind (the minion's
+`vcfops_resource_kind` grain, if it has reported one - null for a freshly
+configured minion until its own bootstrap sets that grain). Use `--state` to
+filter by trust state.
 
 ## Interactive features
 
@@ -102,6 +142,22 @@ python3 scripts/onboarding/vcf-ops-onboard.py \
   --ops-user admin \
   --master-id salt-master-7a1b2c3d-4e5f-6789-abcd-ef0123456789 \
   --deployment docker
+
+# Rotate an already-onboarded Docker minion's key
+python3 scripts/onboarding/vcf-ops-onboard.py \
+  --action rotate --deployment docker \
+  --ops-host vcfops.example.com --ops-user admin \
+  --container-name salt-minion-vcf
+
+# Rotate an already-onboarded Kubernetes minion's key
+python3 scripts/onboarding/vcf-ops-onboard.py \
+  --action rotate --deployment kubernetes \
+  --ops-host vcfops.example.com --ops-user admin \
+  --namespace vcf-salt --release-name vcf-executor
+
+# List trusted minions
+python3 scripts/onboarding/vcf-ops-onboard.py \
+  --action list --ops-host vcfops.example.com --ops-user admin
 ```
 
 See `--help` for the full flag list (container/release naming, image
@@ -139,5 +195,6 @@ anything, `-y` to skip confirmation prompts).
 ## Known limitation
 
 There is currently no API to *revoke* a trusted key (deregistration), so this
-script only covers onboarding. To remove a minion, use your master's own
+script covers onboarding (`configure`), key rotation (`rotate`), and listing
+(`list`), but not removal. To remove a minion, use your master's own
 key-management tooling directly for now.
