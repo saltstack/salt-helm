@@ -53,6 +53,18 @@ spec:
             - name: SALT_MINION_ID
               value: {{ .Values.salt.minionId | quote }}
             {{- end }}
+            {{- if .Values.salt.minionKeySecretName }}
+            - name: SALT_MINION_PRIVATE_KEY_B64
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.salt.minionKeySecretName }}
+                  key: private-key-b64
+            - name: SALT_MINION_PUBLIC_KEY_B64
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.salt.minionKeySecretName }}
+                  key: public-key-b64
+            {{- end }}
             - name: SALT_FILE_CLIENT_LOCAL
               value: {{ .Values.salt.fileClientLocal | quote }}
             {{- if .Values.vault.addr }}

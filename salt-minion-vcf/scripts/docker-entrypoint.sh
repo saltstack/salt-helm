@@ -18,6 +18,26 @@ if [ -z "${SALT_MINION_ID:-}" ]; then
   fi
 fi
 
+# Pre-seed the minion's own RSA keypair when supplied. vcf-ops-onboard.py now
+# generates this keypair and registers its public half as trusted via the
+# VCF Operations API *before* the minion ever starts - so the minion must be
+# handed that exact keypair rather than generating its own (which would not
+# match whatever key was already registered as trusted, and would just sit
+# untrusted). Independent of the master-side config model below (Docker/env
+# or Kubernetes/ConfigMap+Secret) - either can supply these two variables.
+#
+# Only applied when minion.pem doesn't already exist, so a restarted/
+# rescheduled container (persistent PKI volume) keeps its established
+# identity rather than re-seeding on every start.
+if [ ! -s /etc/salt/pki/minion/minion.pem ] \
+    && [ -n "${SALT_MINION_PRIVATE_KEY_B64:-}" ] && [ -n "${SALT_MINION_PUBLIC_KEY_B64:-}" ]; then
+  echo "${SALT_MINION_PRIVATE_KEY_B64}" | base64 -d > /etc/salt/pki/minion/minion.pem
+  chmod 0400 /etc/salt/pki/minion/minion.pem
+  echo "${SALT_MINION_PUBLIC_KEY_B64}" | base64 -d > /etc/salt/pki/minion/minion.pub
+  chmod 0644 /etc/salt/pki/minion/minion.pub
+  echo "Pre-seeded minion keypair (already registered as trusted)"
+fi
+
 # There are two supported configuration models:
 #   1. Docker/env: SALT_MASTER is supplied and this script writes master config.
 #   2. Kubernetes/ConfigMap: 10-master.conf is mounted by Kubernetes/Helm.
@@ -37,7 +57,18 @@ master_tries: -1
 retry_dns: 30
 EOF
 
-  if [ -n "${SALT_MASTER_FINGER:-}" ]; then
+  # Preferred: pre-seed the master's actual public key so the minion trusts
+  # it directly on first connect, instead of independently re-deriving and
+  # comparing a fingerprint (master_finger) against whatever key is presented
+  # live - the two can disagree for reasons outside this image's control
+  # (e.g. a management-plane key registry vs. what the wire protocol
+  # presents), and this is also how VCF's own internal component minions are
+  # bootstrapped - handed the master's public key directly, no fingerprint
+  # verification. SALT_MASTER_PUBKEY_B64 takes precedence over the legacy
+  # SALT_MASTER_FINGER when both are set.
+  if [ -n "${SALT_MASTER_PUBKEY_B64:-}" ]; then
+    echo "${SALT_MASTER_PUBKEY_B64}" | base64 -d > /etc/salt/pki/minion/minion_master.pub
+  elif [ -n "${SALT_MASTER_FINGER:-}" ]; then
     cat >> "$MASTER_CONFIG" <<EOF
 master_finger: '${SALT_MASTER_FINGER}'
 EOF
@@ -46,6 +77,23 @@ elif [ ! -s "$MASTER_CONFIG" ]; then
   echo >&2 "ERROR: Salt Master configuration is missing."
   echo >&2 "Provide SALT_MASTER or mount ${MASTER_CONFIG} (Kubernetes ConfigMap)."
   exit 64
+fi
+
+# FIPS-compliant crypto defaults: VCF-managed Salt masters run FIPS-validated
+# crypto libraries that do not implement SHA-1 for RSA OAEP/PKCS1v15
+# operations at all - a minion defaulting to SHA-1 doesn't get a clean
+# protocol-level rejection from them, it triggers an unhandled exception on
+# both sides ("Some exception handling minion payload" / "...a payload from
+# minion") on every single auth attempt. These are the same values real
+# VCF-managed minions use. Set SALT_FIPS_MODE=false only if your target
+# master is confirmed to NOT be FIPS-enforced.
+FIPS_CONFIG="${CONFIG_DIR}/15-fips.conf"
+if [ "${SALT_FIPS_MODE:-true}" = "true" ]; then
+  cat > "$FIPS_CONFIG" <<EOF
+fips_mode: True
+encryption_algorithm: ${SALT_ENCRYPTION_ALGORITHM:-OAEP-SHA224}
+signing_algorithm: ${SALT_SIGNING_ALGORITHM:-PKCS1v15-SHA224}
+EOF
 fi
 
 cat > "$RUNTIME_CONFIG" <<EOF
@@ -73,6 +121,15 @@ grains:
   vcf_executor: true
   deployment_type: ${DEPLOYMENT_TYPE:-docker}
   managed_by: salt-minion-vcf
+  # VCF Operations' minion listing (GET /api/salt/minions) surfaces this as
+  # resourceKind, read via a bulk get_minion_details grains lookup - it is
+  # null until this grain is set and synced to the master, which is exactly
+  # what this line does on every start of this image. "external" (rather
+  # than a real component kind like vcenter/sddcm) reflects that this is a
+  # generic, user-managed executor minion, not a VCF appliance component -
+  # see vcf_grain_keys.py in config-modules for the full set of recognized
+  # component kinds.
+  vcfops_resource_kind: ${VCFOPS_RESOURCE_KIND:-external}
 EOF
 
 # Opt-in: make ALL pillar compiles (including those for jobs dispatched from
@@ -152,6 +209,7 @@ echo "===================================================="
 echo " Salt Minion VCF"
 echo "===================================================="
 echo "Minion ID       : ${SALT_MINION_ID}"
+echo "Minion Keypair  : $([ -n "${SALT_MINION_PRIVATE_KEY_B64:-}" ] && echo "pre-seeded (pre-registered as trusted)" || echo "self-generated on first start")"
 echo "Deployment Type : ${DEPLOYMENT_TYPE:-docker}"
 if [ -n "${SALT_MASTER:-}" ]; then
   echo "Salt Master     : ${SALT_MASTER}"
@@ -160,6 +218,7 @@ else
 fi
 echo "Log Level       : ${SALT_LOG_LEVEL}"
 echo "file_client     : $([ "${SALT_FILE_CLIENT_LOCAL:-false}" = "true" ] && echo local || echo remote)"
+echo "FIPS Mode       : $([ "${SALT_FIPS_MODE:-true}" = "true" ] && echo "enabled (${SALT_ENCRYPTION_ALGORITHM:-OAEP-SHA224}/${SALT_SIGNING_ALGORITHM:-PKCS1v15-SHA224})" || echo disabled)"
 echo "Vault           : $([ -n "${VAULT_ADDR:-}" ] && echo "${VAULT_ADDR}" || echo disabled)"
 echo "===================================================="
 

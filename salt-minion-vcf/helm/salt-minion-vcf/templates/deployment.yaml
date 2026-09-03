@@ -44,6 +44,18 @@ spec:
               value: kubernetes
             - name: SALT_MINION_ID
               value: {{ default (include "salt-minion-vcf.fullname" .) .Values.salt.minionId | quote }}
+            {{- if .Values.salt.minionKeySecretName }}
+            - name: SALT_MINION_PRIVATE_KEY_B64
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.salt.minionKeySecretName }}
+                  key: private-key-b64
+            - name: SALT_MINION_PUBLIC_KEY_B64
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.salt.minionKeySecretName }}
+                  key: public-key-b64
+            {{- end }}
             - name: SALT_LOG_LEVEL
               value: {{ .Values.salt.logLevel | quote }}
             - name: SALT_FILE_CLIENT_LOCAL

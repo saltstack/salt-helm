@@ -22,7 +22,24 @@ salt:
   #
   # Deployment:
   # Leave empty to use the stable Helm resource name.
+  #
+  # When minionKeySecretName is set (see below), this MUST match the minion
+  # ID that was already registered as trusted for that keypair (e.g. the
+  # minionId vcf-ops-onboard.py received back from POST /api/salt/minions) -
+  # VCF Operations, not this chart, is the source of truth for that ID.
   minionId: ""
+
+  # Name of an EXISTING Kubernetes Secret (created out-of-band, e.g. by
+  # vcf-ops-onboard.py, never via Helm values) with keys 'private-key-b64'
+  # and 'public-key-b64' - a base64-encoded PEM RSA keypair for the minion
+  # itself. Required by the trust-then-start flow this image now expects:
+  # the minion's public key must already be registered as trusted with VCF
+  # Operations *before* the minion starts, so the minion must be handed that
+  # exact keypair rather than generating its own. Leave empty to fall back
+  # to the minion generating its own keypair on first start (legacy
+  # behavior - incompatible with pre-registered trust, since VCF Operations
+  # would not know that self-generated key).
+  minionKeySecretName: ""
 
   masterTries: -1
   retryDns: 30

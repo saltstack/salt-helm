@@ -3,6 +3,8 @@
 .DS_Store
 dist/
 build/
+__pycache__/
+*.pyc
 
 # Real pillar data (credentials) - only *.sls.example templates are tracked.
 pillar/*.sls
