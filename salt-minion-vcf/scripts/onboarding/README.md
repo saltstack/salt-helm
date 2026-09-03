@@ -167,6 +167,26 @@ anything, `-y` to skip confirmation prompts).
 
 ## Things to validate in your own environment
 
+- **PKI volume reuse (Docker)**: a named Docker volume outlives `docker rm` - if you
+  reuse the same `--volume` (or the default `salt-minion-vcf-pki`) across separate
+  `configure`/`rotate` runs, `docker-entrypoint.sh`'s own guard (only seed the
+  keypair if `minion.pem` doesn't already exist, so a genuine restart keeps its
+  identity) would otherwise silently keep an OLD, unrelated keypair instead of the
+  one just registered via the API. The script now clears any leftover
+  `minion.pem`/`minion.pub` from the volume immediately before every container
+  start, so this can't happen - no action needed on your part, just worth knowing
+  why a fresh run always gets a fresh identity even if you reuse the same volume
+  name.
+- **Master FQDN resolution (Docker)**: many on-prem/lab masters have internal-only
+  hostnames (e.g. `*.vrack.vsphere.internal`) that only resolve via a static entry
+  in the *host's* `/etc/hosts`, not real DNS - and Docker containers don't inherit
+  that file automatically, which surfaces as the minion logging
+  `Master hostname: '<fqdn>' not found or not responsive` even though the host
+  itself can ping it fine. The script resolves the master's FQDN on the host
+  (the same way `getent hosts`/`ping` would) and automatically passes it to the
+  container via `--add-host`, so this is handled for you for any master FQDN -
+  no manual IP lookup needed. If the host itself can't resolve it either, this
+  is silently skipped and the container falls back to its own DNS as before.
 - **VCF Operations auth flow**: the script logs in via
   `POST /suite-api/api/auth/token/acquire` and sends
   `Authorization: OpsToken <token>` on subsequent calls - the same pattern

@@ -76,6 +76,7 @@ import getpass
 import json
 import logging
 import shlex
+import socket
 import ssl
 import subprocess
 import sys
@@ -625,6 +626,58 @@ def docker_container_exists(name: str, dry_run: bool) -> bool:
     return out.strip() == name
 
 
+def resolve_master_fqdn_on_host(master_fqdn: str) -> Optional[str]:
+    """
+    Resolves master_fqdn the same way this host's own resolver would (which
+    covers a static /etc/hosts entry, not just real DNS) - internal-only
+    hostnames (e.g. "*.vrack.vsphere.internal" in on-prem/lab environments)
+    are very often only resolvable via such a static entry on the host, and
+    Docker containers do NOT inherit the host's /etc/hosts automatically.
+    Returns None (rather than raising) if the host itself can't resolve it
+    either - in that case the container is no worse off than before, and
+    presumably relies on the same DNS Docker's embedded resolver forwards to.
+    """
+    try:
+        return socket.gethostbyname(master_fqdn)
+    except OSError:
+        return None
+
+
+def docker_clear_pki_volume(volume: str, image: str, dry_run: bool) -> None:
+    """
+    Ensures the named PKI volume has no leftover minion.pem/minion.pub from a
+    PREVIOUS container before this one writes a freshly generated keypair
+    into it.
+    <p>
+    A named Docker volume outlives `docker rm` - it is not tied to any one
+    container's lifecycle. docker-entrypoint.sh only pre-seeds the keypair
+    from SALT_MINION_PRIVATE_KEY_B64/PUBLIC_KEY_B64 when minion.pem doesn't
+    already exist (so a genuine restart of the SAME identity correctly keeps
+    it) - but that means reusing a volume name across separate
+    configure/rotate runs would otherwise silently keep the OLD identity's
+    key files, and the container would run on a key that was never the one
+    just registered via createMinion/rotateMinionKey. This can go
+    unnoticed: a never-before-seen minion ID still gets auto-accepted by the
+    real Salt master regardless of which key it presents (auto_accept
+    doesn't cross-check against RaaS's trust store for a fresh ID), so the
+    mismatch doesn't surface as a rejection - only as a minion whose actual
+    key silently doesn't match what VCF Operations thinks is trusted for it.
+    <p>
+    Both configure and rotate always have a genuinely fresh keypair to write
+    at this point, so clearing first is always correct here - never confirm,
+    never destructive to anything the user intended to keep.
+    <p>
+    Runs as root (-u root): the image's default container user is a non-root
+    uid, and --volume can also be a bind-mounted host path (e.g. /root/keys)
+    rather than a Docker-managed named volume - such a path is very commonly
+    root-owned on the host, and the non-root default user would silently
+    fail (permission denied) to delete anything there, leaving the stale
+    files in place with no visible error.
+    """
+    run(["docker", "run", "--rm", "-u", "root", "-v", f"{volume}:/etc/salt/pki/minion", image,
+         "rm", "-f", PKI_MINION_PEM, PKI_MINION_PUB], dry_run=dry_run, check=False)
+
+
 def docker_start(cfg: DockerConfig, dry_run: bool, assume_yes: bool = False) -> None:
     if docker_container_exists(cfg.container_name, dry_run):
         warn(f"A container named '{cfg.container_name}' already exists "
@@ -636,9 +689,28 @@ def docker_start(cfg: DockerConfig, dry_run: bool, assume_yes: bool = False) -> 
                 f"Choose a different --container-name or remove it manually with "
                 f"`docker rm -f {cfg.container_name}`.")
 
+    docker_clear_pki_volume(cfg.volume, cfg.image, dry_run)
+
     cmd = [
         "docker", "run", "-d",
         "--name", cfg.container_name,
+    ]
+
+    # Give the container the SAME resolution for the master's FQDN that this
+    # host already has - whether that's real DNS or (very commonly, for
+    # internal-only hostnames) just a static /etc/hosts entry that Docker's
+    # container would otherwise have no way to see. Generic: works for any
+    # master FQDN, on any host, without the user needing to look up or supply
+    # an IP themselves. --add-host only takes effect at container creation,
+    # which is fine here since both configure and rotate always (re)create
+    # the container.
+    resolved_master_ip = resolve_master_fqdn_on_host(cfg.master_fqdn) if not dry_run else None
+    if resolved_master_ip:
+        info(f"Resolved master FQDN '{cfg.master_fqdn}' to {resolved_master_ip} on this host - "
+             f"passing --add-host so the container can resolve it too.")
+        cmd += ["--add-host", f"{cfg.master_fqdn}:{resolved_master_ip}"]
+
+    cmd += [
         "-e", f"SALT_MASTER={cfg.master_fqdn}",
         "-e", f"SALT_MASTER_PUBKEY_B64={cfg.master_pubkey_b64}",
         "-e", f"SALT_MINION_ID={cfg.minion_id}",
@@ -733,13 +805,15 @@ def docker_read_configured_master_fqdn(container: str, dry_run: bool) -> Optiona
 
 
 def docker_clear_minion_keys(container: str, dry_run: bool) -> None:
-    """Removes the minion's PKI files from the (persistent, named) volume
-    while the OLD container still exists to exec into. Required before
-    recreating the container with a new keypair - docker-entrypoint.sh only
-    seeds SALT_MINION_PRIVATE_KEY_B64/PUBLIC_KEY_B64 into the PKI dir when
-    minion.pem doesn't already exist, and `docker rm` alone does not remove
-    the named volume's contents."""
-    run(["docker", "exec", container, "rm", "-f", PKI_MINION_PEM, PKI_MINION_PUB],
+    """Removes the minion's PKI files from the (persistent, named or
+    bind-mounted) volume while the OLD container still exists to exec into.
+    Required before recreating the container with a new keypair -
+    docker-entrypoint.sh only seeds SALT_MINION_PRIVATE_KEY_B64/PUBLIC_KEY_B64
+    into the PKI dir when minion.pem doesn't already exist, and `docker rm`
+    alone does not remove the volume's contents. Runs as root (-u root) -
+    see docker_clear_pki_volume() for why (default non-root user, possible
+    root-owned bind-mounted host path)."""
+    run(["docker", "exec", "-u", "root", container, "rm", "-f", PKI_MINION_PEM, PKI_MINION_PUB],
         dry_run=dry_run, check=False)
 
 
