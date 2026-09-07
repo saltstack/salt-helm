@@ -7,7 +7,7 @@ Helm charts for deploying different flavours of Salt images to Kubernetes.
 | Chart | Description |
 | --- | --- |
 | [salt-master-kubernetes](salt-master-kubernetes) | Installs a Salt master Deployment exposed via a NodePort Service, for minions connecting from outside normal pod scheduling. Deliberately minimal - no RBAC, no saltext.kubernetes install. |
-| [salt-minion-kubernetes](salt-minion-kubernetes) | Installs Salt Minion and RBAC. Has built-in support to run CIS Kubernetes compliance assessments via kube-bench on-demand Jobs. Supports in-cluster (minion runs as a pod) and external (RBAC only) modes. |
+| [salt-minion-kubernetes](salt-minion-kubernetes) | Installs Salt Minion and RBAC. Has built-in support to run CIS Kubernetes compliance assessments via kube-bench on-demand Jobs. Supports in-cluster (minion runs as a pod) and external (RBAC only) modes. Like `salt-minion-vcf`, this is a full project directory - its own `Dockerfile` builds a Salt minion preloaded with `saltext.vault` and `saltext.kubernetes`, with `kubectl` bundled in. |
 | [salt-minion-vcf](salt-minion-vcf) | Extensible Salt Minion image (Docker, Docker Compose, Kubernetes, and Helm) preloaded with configurable Salt extensions - `saltext.vcf` (VMware Cloud Foundation automation: vCenter, NSX, SDDC-M, VCF Ops) by default, but not limited to it. Includes `saltext.vault` integration for sourcing credentials from HashiCorp Vault into Pillar instead of storing them on disk. Unlike the other entries here, this directory is the full project (Dockerfile, Docker Compose, scripts, docs), not a chart-only directory - the Helm chart itself lives at [`salt-minion-vcf/helm/salt-minion-vcf`](salt-minion-vcf/helm/salt-minion-vcf). |
 
 ## Usage
@@ -28,6 +28,18 @@ helm install salt-minion-vcf ./salt-minion-vcf/helm/salt-minion-vcf \
 ```
 
 See each chart's `values.yaml` for configurable parameters.
+
+Charts and images are also published to GHCR — see
+[`docs/releasing.md`](docs/releasing.md) for the full list, and each
+component's own `CHANGELOG.md` for exactly which Salt/extension versions a
+given release tag carries (the tag itself is just that component's own
+semver, independent of Salt's version):
+
+```bash
+helm install salt-master-kubernetes \
+  oci://ghcr.io/saltstack/salt-helm/charts/salt-master-kubernetes \
+  --version 0.1.0
+```
 
 ### Docker
 
@@ -52,4 +64,12 @@ or with Docker Compose:
 cd salt-minion-vcf
 cp .env.example .env   # set SALT_MASTER, etc.
 docker compose up -d --build
+```
+
+`salt-minion-kubernetes` and `docker/salt-master` build the same way, each
+with its own directory as context:
+
+```bash
+docker build -t salt-minion-kubernetes:0.1.0 ./salt-minion-kubernetes
+docker build -t salt-master:3008.2 ./docker/salt-master
 ```

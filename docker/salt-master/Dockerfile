@@ -1,12 +1,15 @@
 # syntax=docker/dockerfile:1
 #
-# Master-only counterpart to docker/salt-minion/Dockerfile. Deliberately
-# minimal: unlike the minion, this image doesn't need saltext.kubernetes
-# (execution/state modules run on minions, not the master) or kubectl (the
-# master never talks to a cluster API directly), so it skips both.
+# Master-only counterpart to the salt-minion-vcf/salt-minion-kubernetes
+# minion images. Deliberately minimal: unlike either minion variant, this
+# image doesn't need any Salt extensions (execution/state modules run on
+# minions, not the master) or kubectl (the master never talks to a cluster
+# API directly), so it skips both.
 FROM debian:12-slim
 
-ARG SALT_VERSION=latest
+# Pinned rather than "latest" so a given salt-master-image release tag
+# reproducibly carries one specific Salt version - see CHANGELOG.md.
+ARG SALT_VERSION=3008.2
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -39,5 +42,21 @@ RUN set -eu; \
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Non-root: the onedir bootstrap install doesn't reliably create a system
+# 'salt' user the way the Debian/Ubuntu apt packages do (that's a distro
+# packaging postinst step, not part of the onedir tarball), so create one
+# ourselves if it isn't already there, then own everything the master
+# writes to at runtime. Pinned to uid/gid 999 (matching what salt-common's
+# own postinst allocates in the apt-based minion images, empirically) -
+# USER below must be numeric, not the name, or Kubernetes' runAsNonRoot
+# check can't verify it without resolving /etc/passwd inside the image,
+# and refuses to start the container at all ("cannot verify user is
+# non-root").
+RUN id salt >/dev/null 2>&1 || useradd --system --uid 999 --no-create-home --shell /usr/sbin/nologin salt; \
+    mkdir -p /etc/salt/pki/master /var/cache/salt/master /var/run/salt/master /var/log/salt; \
+    chown -R salt:salt /etc/salt /var/cache/salt /var/run/salt /var/log/salt
+
+USER 999:999
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -1,15 +1,20 @@
 # Salt master image
 
 A Salt master Docker image built from the official onedir distribution via Salt's
-[bootstrap script](https://github.com/saltstack/salt-bootstrap). Master-only counterpart to
-[`docker/salt-minion`](../salt-minion/README.md) — unlike that image, this one does **not**
-install `saltext.kubernetes` or bundle `kubectl`, since execution/state modules run on minions,
-not the master, and the master never talks to a cluster API directly.
+[bootstrap script](https://github.com/saltstack/salt-bootstrap). Master-only counterpart to the
+[`salt-minion-vcf`](../../salt-minion-vcf/README.md) and
+[`salt-minion-kubernetes`](../../salt-minion-kubernetes/README.md) minion images — unlike either
+of those, this one does **not** install any Salt extensions or bundle `kubectl`, since
+execution/state modules run on minions, not the master, and the master never talks to a cluster
+API directly.
+
+See [`CHANGELOG.md`](CHANGELOG.md) for which Salt version each release tag of this image
+actually carries.
 
 ## Build
 
-Unlike `docker/salt-minion`, this image needs nothing outside its own directory, so it can be
-built with that directory as the context:
+This image needs nothing outside its own directory, so it can be built with that directory as
+the context:
 
 ```bash
 docker build -t salt-master docker/salt-master
@@ -19,7 +24,7 @@ Build args:
 
 | Arg | Default | Purpose |
 | --- | --- | --- |
-| `SALT_VERSION` | `latest` | Salt version to install, e.g. `3007.1`. `latest` installs the newest stable onedir release. |
+| `SALT_VERSION` | `3008.2` | Salt version to install, e.g. `3007.1`. `latest` installs the newest stable onedir release. |
 
 ## Run
 

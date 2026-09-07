@@ -3,13 +3,50 @@ namespace: kube-system
 
 agent:
   image:
-    # Built from docker/salt-master/Dockerfile; not published to a registry
-    # yet -- push it to each node's containerd store with
-    # scripts/push-image-to-nodes.sh --role=master first.
+    # Built from docker/salt-master/Dockerfile. Also published to
+    # ghcr.io/saltstack/salt-helm/salt-master (see docs/releasing.md), but
+    # this default is unqualified for the push-to-node lab workflow below --
+    # push it to each node's containerd store with
+    # scripts/push-image-to-nodes.sh --role=master, or set repository to the
+    # GHCR path to pull instead.
     repository: salt-master
     tag: "3007.1"
     pullPolicy: IfNotPresent
   replicas: 1
+
+  # No numeric runAsUser/runAsGroup/fsGroup here on purpose - the image runs
+  # as the 'salt' system user salt-common's own postinst creates (or this
+  # Dockerfile creates itself for the onedir install - see
+  # docker/salt-master/Dockerfile), whose numeric uid isn't a stable
+  # constant to pin. runAsNonRoot alone still gets enforced.
+  podSecurityContext:
+    runAsNonRoot: true
+
+  # No added capabilities: when agent.persistence.enabled mounts a
+  # PVC/hostPath at /etc/salt/pki, it comes back root-owned regardless of
+  # fsGroup, and capabilities.add can't fix that either - not every
+  # container runtime populates the *ambient* capability set for a
+  # non-root container (confirmed on this project's own test cluster:
+  # CapBnd includes CHOWN/FOWNER, CapEff/CapAmb are still empty, so the
+  # capability is granted but unusable), and even setcap-based file
+  # capabilities need allowPrivilegeEscalation: true to take effect on
+  # exec. initContainers.fixPkiPerms below (runs as root, once, briefly)
+  # is the tradeoff instead: this long-running container never runs as
+  # root, ever.
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - ALL
+
+  # Only relevant when persistence.enabled mounts a volume at /etc/salt/pki.
+  # Reuses image.repository/tag itself (not e.g. busybox) so it can resolve
+  # 'salt' by name via that image's own /etc/passwd, rather than
+  # duplicating its numeric uid here.
+  initContainers:
+    fixPkiPerms:
+      enabled: true
 
   # Auto-accepts new minion keys instead of requiring a manual `salt-key -a`
   # per minion. Convenient for dev/test labs; leave false for a production
@@ -18,6 +55,18 @@ agent:
 
   # Sets `id:` on the master itself. Leave empty to use the pod hostname.
   masterId: ""
+
+  # Name of an EXISTING Kubernetes Secret (created out-of-band - e.g. by
+  # whatever generates and registers this master's identity with RaaS/the
+  # minion side before this chart is ever installed - never via Helm
+  # values) with keys 'private-key-b64' and 'public-key-b64': a
+  # base64-encoded PEM RSA keypair for the master itself. Pre-seeding this
+  # way means every minion that already trusts this exact keypair keeps
+  # working across master reinstalls/rescheduling, without also needing
+  # agent.persistence enabled. Leave empty to fall back to the master
+  # generating its own keypair on first start (fine for dev/test, but any
+  # minion that already trusts an old keypair won't trust the new one).
+  masterKeySecretName: ""
 
   # Persists the master's /etc/salt/pki (its own keypair *and* the
   # accepted/pending minion key lists) across pod restarts. Without this,

@@ -27,6 +27,20 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      securityContext:
+        {{- toYaml .Values.agent.podSecurityContext | nindent 8 }}
+      {{- if and .Values.agent.persistence.enabled .Values.agent.initContainers.fixPkiPerms.enabled }}
+      initContainers:
+        - name: fix-pki-perms
+          image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
+          command: ["chown", "-R", "salt:salt", "/etc/salt/pki"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+          volumeMounts:
+            - name: pki
+              mountPath: /etc/salt/pki
+      {{- end }}
       containers:
         - name: salt-master
           image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
@@ -38,6 +52,18 @@ spec:
             - name: SALT_MASTER_ID
               value: {{ .Values.agent.masterId | quote }}
             {{- end }}
+            {{- if .Values.agent.masterKeySecretName }}
+            - name: SALT_MASTER_PRIVATE_KEY_B64
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.agent.masterKeySecretName }}
+                  key: private-key-b64
+            - name: SALT_MASTER_PUBLIC_KEY_B64
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.agent.masterKeySecretName }}
+                  key: public-key-b64
+            {{- end }}
           ports:
             - name: publish
               containerPort: 4505
@@ -48,6 +74,8 @@ spec:
             - name: pki
               mountPath: /etc/salt/pki
           {{- end }}
+          securityContext:
+            {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
       {{- if .Values.agent.persistence.enabled }}
       volumes:
         - name: pki

@@ -35,6 +35,18 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.initContainers.fixPkiPerms.enabled }}
+      initContainers:
+        - name: fix-pki-perms
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command: ["chown", "-R", "salt:salt", "/etc/salt/pki/minion"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+          volumeMounts:
+            - name: pki
+              mountPath: /etc/salt/pki/minion
+      {{- end }}
       containers:
         - name: minion
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
