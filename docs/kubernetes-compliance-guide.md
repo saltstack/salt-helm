@@ -104,8 +104,8 @@ for the full list):
 Verify the master came up healthy:
 
 ```bash
-kubectl -n kube-system get pods -l app=salt-master-kubernetes
-kubectl -n kube-system exec -it deploy/salt-master-kubernetes -- salt-key -L
+kubectl -n salt-master get pods -l app=salt-master-kubernetes
+kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- salt-key -L
 ```
 
 ### 2b. salt-minion-kubernetes
@@ -134,9 +134,9 @@ jobs), and both must be reachable at whatever address you set
 Accept the new minion's key from the master:
 
 ```bash
-kubectl -n kube-system exec -it deploy/salt-master-kubernetes -- salt-key -L
-kubectl -n kube-system exec -it deploy/salt-master-kubernetes -- salt-key -a <minion-id>
-kubectl -n kube-system exec -it deploy/salt-master-kubernetes -- salt '<minion-id>' test.ping
+kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- salt-key -L
+kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- salt-key -a <minion-id>
+kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- salt '<minion-id>' test.ping
 ```
 
 `test.ping` returning `True` confirms both ports are wired up correctly.
@@ -179,6 +179,10 @@ or `run_assessment` won't find the CronJob it's looking for:
 | `namespace` | `namespace` |
 | `cronJob.name` | `kubeBench.cronJobName` |
 
+`salt-minion-kubernetes` now defaults `namespace` to `salt` (not `kube-system`),
+so install `kube-bench-job` with `--set namespace=salt` unless you've
+overridden `salt-minion-kubernetes`'s own `namespace` value too.
+
 See [`salt-k8s-compliance/helm/kube-bench-job/README.md`](https://github.com/saltstack/salt-k8s-compliance/blob/main/helm/kube-bench-job/README.md)
 for the full configuration reference, including host-path mounts for
 non-kubeadm distros (RKE2/k3s) and the RBAC gaps to watch for on multi-node
@@ -192,7 +196,7 @@ execution module (installed on the minion as part of `saltext.kubernetes`).
 Force a fresh assessment right now, regardless of any cached result:
 
 ```bash
-kubectl -n kube-system exec -it deploy/salt-master-kubernetes -- \
+kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- \
   salt '<minion-id>' kube_bench_cache.run_assessment
 ```
 
@@ -205,7 +209,7 @@ assessment first only if the cache is stale — see `pillar.ttlSeconds`
 below):
 
 ```bash
-kubectl -n kube-system exec -it deploy/salt-master-kubernetes -- \
+kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- \
   salt '<minion-id>' kube_bench_cache.status_for_check test_number=1.1.11
 ```
 

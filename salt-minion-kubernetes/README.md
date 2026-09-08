@@ -54,7 +54,7 @@ Then issue a token for the created ServiceAccount and use it in the external
 minion's kubeconfig:
 
 ```bash
-kubectl create token salt-minion-kubernetes -n kube-system
+kubectl create token salt-minion-kubernetes -n salt
 ```
 
 ## Uninstalling the chart
@@ -70,7 +70,7 @@ The following table lists the most commonly overridden values. See
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| `namespace` | Namespace for all chart resources. Must match `kube-bench-job`'s namespace. | `kube-system` |
+| `namespace` | Namespace for all chart resources. Must match `kube-bench-job`'s namespace. | `salt` |
 | `agent.authMode` | `in_cluster` or `external`. | `in_cluster` |
 | `agent.image.repository` | Salt minion image repository. | `ghcr.io/saltstack/salt-helm/salt-minion-kubernetes` |
 | `agent.image.tag` | Salt minion image tag. | `0.1.0` |
@@ -78,6 +78,10 @@ The following table lists the most commonly overridden values. See
 | `agent.saltMasterHost` | Salt master address. Required for `in_cluster` mode. | `""` |
 | `agent.saltMasterPort` | Salt master "ret" port (`master_port`). Override alongside `agent.saltPublishPort` when the master isn't reachable on its default ports, e.g. behind a Kubernetes NodePort Service. | `4506` |
 | `agent.saltPublishPort` | Salt master "publish" port (`publish_port`). | `4505` |
+| `agent.authTimeout` | Seconds to wait for master auth before retrying - reduces thundering-herd retry storms. | `60` |
+| `agent.masterAliveInterval` | Seconds between checks that the master TCP connection is still alive; reconnects if not. | `60` |
+| `agent.reconDefault` / `agent.reconMax` | ZeroMQ transport reconnect backoff range (ms). | `1000` / `5000` |
+| `agent.reconRandomize` | Jitters reconnect delay so minions don't all retry in lockstep. | `true` |
 | `agent.minion.id` | Salt minion ID. Empty uses the pod hostname. | `""` |
 | `agent.persistence.enabled` | Persist the minion's generated keypair (`/etc/salt/pki`) across pod restarts. | `false` |
 | `agent.persistence.type` | `pvc` or `hostPath`. `hostPath` requires `agent.nodeSelector`. | `pvc` |

@@ -48,6 +48,8 @@ spec:
           env:
             - name: SALT_AUTO_ACCEPT
               value: {{ .Values.agent.autoAccept | quote }}
+            - name: SALT_PRESENCE_EVENTS
+              value: {{ .Values.agent.presenceEvents | quote }}
             {{- if .Values.agent.masterId }}
             - name: SALT_MASTER_ID
               value: {{ .Values.agent.masterId | quote }}

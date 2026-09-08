@@ -7,7 +7,7 @@ maps naturally to the runtime.
 
 ```bash
 helm upgrade --install vcf-executor ./helm/salt-minion-vcf \
-  --namespace vcf-salt \
+  --namespace salt \
   --create-namespace \
   --set salt.master=salt-master.example.com \
   --set image.repository=registry.example.com/salt-minion-vcf \
@@ -24,7 +24,7 @@ Scale to three independent Minions:
 
 ```bash
 helm upgrade --install vcf-executor ./helm/salt-minion-vcf \
-  --namespace vcf-salt \
+  --namespace salt \
   --set workload.kind=StatefulSet \
   --set workload.replicas=3 \
   --set salt.master=salt-master.example.com
@@ -41,7 +41,7 @@ A Deployment is also supported when exactly one Minion is wanted.
 
 ```bash
 helm upgrade --install vcf-executor ./helm/salt-minion-vcf \
-  --namespace vcf-salt \
+  --namespace salt \
   --set workload.kind=Deployment \
   --set workload.replicas=1 \
   --set salt.master=salt-master.example.com

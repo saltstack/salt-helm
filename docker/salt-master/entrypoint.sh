@@ -8,6 +8,12 @@ mkdir -p "$CONF_DIR"
     [ -z "${SALT_AUTO_ACCEPT:-}" ] || printf 'auto_accept: %s\n' "$SALT_AUTO_ACCEPT"
     [ -z "${SALT_MASTER_ID:-}" ] || printf 'id: %s\n' "$SALT_MASTER_ID"
 
+    # Fires salt/presence/present (and /change) events on the event bus so
+    # `salt-run manage.present`/`manage.status` reflect which minions are
+    # actually connected right now - useful in Kubernetes, where minion pods
+    # come and go independently of their accepted-key status.
+    printf 'presence_events: %s\n' "${SALT_PRESENCE_EVENTS:-True}"
+
     # Keep pidfile/sock_dir off /var/run: the container runtime remounts
     # /run fresh (root-owned, 0755) on every pod start regardless of what's
     # baked into the image, so a non-root master can never mkdir under
