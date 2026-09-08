@@ -6,9 +6,10 @@ Helm charts for deploying different flavours of Salt images to Kubernetes.
 
 | Chart | Description |
 | --- | --- |
-| [salt-master-kubernetes](salt-master-kubernetes) | Installs a Salt master Deployment exposed via a NodePort Service, for minions connecting from outside normal pod scheduling. Deliberately minimal - no RBAC, no saltext.kubernetes install. |
+| [salt-master-kubernetes](salt-master-kubernetes) | Installs a Salt master StatefulSet, supporting Salt's native [multi-master mode](https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html) for active-active horizontal scaling (all replicas share one pre-seeded keypair). Exposed via a flat Service, a headless Service (in-cluster per-ordinal addressing), and optionally one NodePort Service per replica (external per-ordinal addressing). Deliberately minimal - no RBAC, no saltext.kubernetes install. |
 | [salt-minion-kubernetes](salt-minion-kubernetes) | Installs Salt Minion and RBAC. Has built-in support to run CIS Kubernetes compliance assessments via kube-bench on-demand Jobs. Supports in-cluster (minion runs as a pod) and external (RBAC only) modes. Like `salt-minion-vcf`, this is a full project directory - its own `Dockerfile` builds a Salt minion preloaded with `saltext.vault` and `saltext.kubernetes`, with `kubectl` bundled in. |
 | [salt-minion-vcf](salt-minion-vcf) | Extensible Salt Minion image (Docker, Docker Compose, Kubernetes, and Helm) preloaded with configurable Salt extensions - `saltext.vcf` (VMware Cloud Foundation automation: vCenter, NSX, SDDC-M, VCF Ops) by default, but not limited to it. Includes `saltext.vault` integration for sourcing credentials from HashiCorp Vault into Pillar instead of storing them on disk. Unlike the other entries here, this directory is the full project (Dockerfile, Docker Compose, scripts, docs), not a chart-only directory - the Helm chart itself lives at [`salt-minion-vcf/helm/salt-minion-vcf`](salt-minion-vcf/helm/salt-minion-vcf). |
+| [salt-key-operator](salt-key-operator) | A small Go/controller-runtime operator + `SaltMinionKey` CRD - the declarative replacement for running `salt-key -a <minion-id>` by hand, which (unlike a manual `salt-key -a`, which only ever affects one pod) keeps a minion trusted consistently across every replica of an active-active `salt-master-kubernetes` release. |
 
 ## Quick install (published images/charts)
 
@@ -24,9 +25,22 @@ component's own semver, independent of Salt's version).
 ```bash
 helm install salt-master-kubernetes \
   oci://ghcr.io/saltstack/salt-helm/charts/salt-master-kubernetes \
-  --version 0.1.0 \
+  --version 1.0.0 \
+  --namespace salt-master --create-namespace \
   --set agent.image.repository=ghcr.io/saltstack/salt-helm/salt-master \
   --set agent.image.tag=1.0.0
+```
+
+For active-active (multiple replicas) and replacing manual `salt-key -a`
+with the `SaltMinionKey` CRD, see
+[`salt-master-kubernetes/README.md`](salt-master-kubernetes/README.md) and
+[`salt-key-operator/README.md`](salt-key-operator/README.md).
+
+```bash
+helm install salt-key-operator \
+  oci://ghcr.io/saltstack/salt-helm/charts/salt-key-operator \
+  --version 0.1.0 \
+  --namespace salt-master
 ```
 
 ### salt-minion-kubernetes

@@ -1,0 +1,70 @@
+image:
+  # Published to ghcr.io/saltstack/salt-helm/salt-key-operator (see
+  # docs/releasing.md). Distroless static image - runs as the built-in
+  # "nonroot" user (uid/gid 65532), no numeric override needed here the way
+  # this repo's other (apt/onedir-based) images require.
+  repository: ghcr.io/saltstack/salt-helm/salt-key-operator
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# Deliberately a single, lightweight controller - one SaltMinionKey/master
+# pairing per namespace (see watchNamespace below) doesn't need a
+# highly-available control plane the way the master tier it feeds does.
+# Bump this only alongside leaderElection.enabled below.
+replicas: 1
+
+# Restricts the operator's watches to a single namespace - and, as long as
+# this matches the namespace the operator itself is installed into (the
+# recommended setup - see README.md and salt-master-kubernetes's own
+# namespace default), also switches RBAC from a cluster-wide ClusterRole to
+# a namespaced Role, the smallest footprint this operator can run with.
+# Defaults to "salt-master" to match salt-master-kubernetes's own default
+# namespace - install both charts into the same namespace and everything
+# lines up with no further configuration. Set to "" (cluster-wide) only for
+# a genuine multi-tenant cluster with SaltMinionKey objects and target
+# master releases spread across multiple namespaces.
+watchNamespace: salt-master
+
+# Leader election exists to let >1 operator replica run without split-brain
+# writers - irrelevant, and pure overhead, at the default replicas: 1.
+# Turn this on together with raising replicas above if this operator's own
+# availability ever needs to match the active-active master tier it feeds.
+leaderElection:
+  enabled: false
+
+serviceAccount:
+  name: salt-key-operator
+  annotations: {}
+
+# No numeric runAsUser/runAsGroup here on purpose - distroless/static's
+# "nonroot" base image variant already runs as a fixed, stable uid/gid
+# (65532) baked into the image itself, unlike this repo's other images
+# (which resolve a 'salt' user created by apt/onedir install steps that
+# aren't guaranteed stable across base-image updates).
+podSecurityContext:
+  runAsNonRoot: true
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Deliberately small - this controller does nothing but watch a handful of
+# API objects and occasionally patch one ConfigMap; it's not expected to
+# ever need more than this regardless of minion count (see README.md's
+# ConfigMap-size-ceiling note for the actual scaling limit, which isn't CPU/
+# memory-bound).
+resources:
+  requests:
+    cpu: 20m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

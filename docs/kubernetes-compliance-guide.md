@@ -105,7 +105,7 @@ Verify the master came up healthy:
 
 ```bash
 kubectl -n salt-master get pods -l app=salt-master-kubernetes
-kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- salt-key -L
+kubectl -n salt-master exec -it statefulset/salt-master-kubernetes -- salt-key -L
 ```
 
 ### 2b. salt-minion-kubernetes
@@ -134,9 +134,9 @@ jobs), and both must be reachable at whatever address you set
 Accept the new minion's key from the master:
 
 ```bash
-kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- salt-key -L
-kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- salt-key -a <minion-id>
-kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- salt '<minion-id>' test.ping
+kubectl -n salt-master exec -it statefulset/salt-master-kubernetes -- salt-key -L
+kubectl -n salt-master exec -it statefulset/salt-master-kubernetes -- salt-key -a <minion-id>
+kubectl -n salt-master exec -it statefulset/salt-master-kubernetes -- salt '<minion-id>' test.ping
 ```
 
 `test.ping` returning `True` confirms both ports are wired up correctly.
@@ -196,7 +196,7 @@ execution module (installed on the minion as part of `saltext.kubernetes`).
 Force a fresh assessment right now, regardless of any cached result:
 
 ```bash
-kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- \
+kubectl -n salt-master exec -it statefulset/salt-master-kubernetes -- \
   salt '<minion-id>' kube_bench_cache.run_assessment
 ```
 
@@ -209,7 +209,7 @@ assessment first only if the cache is stale — see `pillar.ttlSeconds`
 below):
 
 ```bash
-kubectl -n salt-master exec -it deploy/salt-master-kubernetes -- \
+kubectl -n salt-master exec -it statefulset/salt-master-kubernetes -- \
   salt '<minion-id>' kube_bench_cache.status_for_check test_number=1.1.11
 ```
 

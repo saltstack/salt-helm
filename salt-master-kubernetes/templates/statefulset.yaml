@@ -77,13 +77,37 @@ spec:
               containerPort: 4505
             - name: ret
               containerPort: 4506
-          {{- if .Values.agent.jobCache.persistence.enabled }}
+          {{- if or .Values.agent.jobCache.persistence.enabled .Values.agent.trustedMinions.enabled }}
           volumeMounts:
+            {{- if .Values.agent.jobCache.persistence.enabled }}
             - name: job-cache
               mountPath: /var/cache/salt/master/jobs
+            {{- end }}
+            {{- if .Values.agent.trustedMinions.enabled }}
+            # Read-only: this becomes the ONLY way minions get accepted once
+            # enabled - salt-key-operator (see ../../salt-key-operator) owns
+            # this ConfigMap's data out-of-band, one file per trusted minion
+            # ID. Because the mount is read-only, `salt-key -a` no longer
+            # works against this master once this is enabled - it would need
+            # to write into this same directory. That's intentional: mixing
+            # operator-managed and manually-accepted keys across an
+            # active-active master tier would mean different replicas
+            # disagreeing on who's trusted, exactly the gap this exists to
+            # close. minions_pre/ (pending) is unaffected and stays
+            # writable - only minions/ (accepted) is replaced.
+            - name: trusted-minions
+              mountPath: /etc/salt/pki/master/minions
+              readOnly: true
+            {{- end }}
           {{- end }}
           securityContext:
             {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
+      {{- if .Values.agent.trustedMinions.enabled }}
+      volumes:
+        - name: trusted-minions
+          configMap:
+            name: {{ .Values.agent.trustedMinions.configMapName }}
+      {{- end }}
   {{- if .Values.agent.jobCache.persistence.enabled }}
   volumeClaimTemplates:
     - metadata:

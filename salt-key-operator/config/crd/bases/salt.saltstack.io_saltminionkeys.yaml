@@ -1,0 +1,177 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: saltminionkeys.salt.saltstack.io
+spec:
+  group: salt.saltstack.io
+  names:
+    kind: SaltMinionKey
+    listKind: SaltMinionKeyList
+    plural: saltminionkeys
+    singular: saltminionkey
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.minionId
+      name: Minion
+      type: string
+    - jsonPath: .status.observedMasterConfigMap
+      name: ConfigMap
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Accepted")].status
+      name: Accepted
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          SaltMinionKey is the Schema for the saltminionkeys API. Creating one is
+          the declarative replacement for running `salt-key -a <minionId>` on a
+          salt-master-kubernetes pod - and unlike a manual salt-key -a (which only
+          ever affects whichever single pod `kubectl exec` happens to pick), the
+          controller for this resource writes into a ConfigMap mounted into every
+          replica of the target master release, so acceptance is consistent across
+          an active-active master tier.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              SaltMinionKeySpec declares that a specific minion ID's public key should
+              be trusted (i.e. "accepted", in salt-key terms) by whichever
+              salt-master-kubernetes release lives in this SaltMinionKey's own
+              namespace, without ever running `salt-key -a` by hand.
+
+              Deliberately minimal - just the two facts that actually vary per minion.
+              There's no reference to a Secret (a minion's public key isn't sensitive -
+              it's the whole point of asymmetric crypto that the public half is safe to
+              hand out, so requiring a separate Secret object just to hold it would be
+              pure indirection) and no reference to which master ConfigMap to target
+              (the controller discovers it by label within this object's own
+              namespace - see internal/controller - matching this repo's existing
+              convention of one salt-master-kubernetes release per dedicated
+              namespace, e.g. "salt-master").
+            properties:
+              minionId:
+                description: |-
+                  MinionID is the exact Salt minion ID - this becomes the filename
+                  under the target master's /etc/salt/pki/master/minions/ once
+                  trusted. Kept distinct from metadata.name because minion IDs may
+                  contain characters (uppercase, underscores, dots, colons - e.g. an
+                  FQDN) that are not valid Kubernetes object names (RFC 1123).
+                minLength: 1
+                type: string
+              publicKey:
+                description: |-
+                  PublicKey is the minion's public key, PEM-encoded
+                  ("-----BEGIN PUBLIC KEY-----..."), inline. Not sensitive - see the
+                  type-level comment above for why this isn't a SecretRef.
+                minLength: 1
+                type: string
+            required:
+            - minionId
+            - publicKey
+            type: object
+          status:
+            description: |-
+              SaltMinionKeyStatus reports whether the key has actually been written
+              into the target master ConfigMap yet.
+            properties:
+              conditions:
+                description: |-
+                  Conditions represent the latest available observations of this
+                  SaltMinionKey's state. See ConditionTypeAccepted.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedMasterConfigMap:
+                description: |-
+                  ObservedMasterConfigMap is the trusted-minions ConfigMap this key was
+                  last successfully written to - the name the controller auto-discovered
+                  in this object's own namespace, surfaced here so a status reader
+                  doesn't have to go looking for it themselves.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,40 @@
+name: release (salt-key-operator chart)
+
+# Tag scheme: salt-key-operator-chart/vX.Y.Z -- must match the `version:` in
+# salt-key-operator/helm/salt-key-operator/Chart.yaml. See docs/releasing.md.
+on:
+  push:
+    tags:
+      - "salt-key-operator-chart/v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Derive version and verify it matches Chart.yaml
+        id: meta
+        run: |
+          set -eu
+          tag_version="${GITHUB_REF_NAME#salt-key-operator-chart/v}"
+          chart_version="$(helm show chart salt-key-operator/helm/salt-key-operator | awk '/^version:/ {print $2}')"
+          if [ "$tag_version" != "$chart_version" ]; then
+            echo "Tag version $tag_version does not match Chart.yaml version $chart_version" >&2
+            exit 1
+          fi
+          grep -Eq "^#+ salt-key-operator-chart/v${tag_version}$" salt-key-operator/helm/salt-key-operator/CHANGELOG.md \
+            || { echo "No CHANGELOG.md entry for salt-key-operator-chart/v${tag_version}" >&2; exit 1; }
+          echo "version=$tag_version" >> "$GITHUB_OUTPUT"
+      - name: helm lint
+        run: helm lint salt-key-operator/helm/salt-key-operator
+      - name: helm package
+        run: helm package salt-key-operator/helm/salt-key-operator
+      - name: helm registry login
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: helm push
+        run: helm push "salt-key-operator-${{ steps.meta.outputs.version }}.tgz" "oci://ghcr.io/${{ github.repository }}/charts"

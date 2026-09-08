@@ -83,6 +83,24 @@ agent:
   # without setting this).
   masterKeySecretName: ""
 
+  # Replaces manual `salt-key -a <minion-id>` with salt-key-operator's
+  # SaltMinionKey CRD (see ../salt-key-operator) - a ConfigMap it manages,
+  # mounted READ-ONLY at /etc/salt/pki/master/minions. Once enabled,
+  # `salt-key -a` no longer works against this master at all (the directory
+  # it would write into is read-only) - every accepted minion must go
+  # through a SaltMinionKey instead. That's intentional: across an
+  # active-active master tier, mixing operator-managed and manually-
+  # accepted keys would mean different replicas disagreeing on who's
+  # trusted, exactly the gap salt-key-operator exists to close. Leave
+  # false to keep the traditional salt-key workflow (fine for a single
+  # replica; does NOT give consistent acceptance across replicas > 1).
+  trustedMinions:
+    enabled: false
+    # Set false to reference an existing ConfigMap (e.g. created by another
+    # tool) instead of having this chart create one.
+    createConfigMap: true
+    configMapName: salt-master-kubernetes-trusted-minions
+
   # Once masterKeySecretName is set, the master's own identity is supplied
   # externally on every start - there's nothing left to persist for PKI.
   # The accepted-minion-keys list is likewise no longer local/persisted

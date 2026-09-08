@@ -26,6 +26,27 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: salt-minion-kubernetes/Dockerfile
+      - name: hadolint (salt-key-operator)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: salt-key-operator/Dockerfile
+
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: salt-key-operator/go.mod
+      - name: go vet
+        working-directory: salt-key-operator
+        run: go vet ./...
+      - name: go test
+        working-directory: salt-key-operator
+        run: go test ./...
+      - name: go build
+        working-directory: salt-key-operator
+        run: go build ./...
 
   shellcheck:
     runs-on: ubuntu-latest
@@ -45,8 +66,24 @@ jobs:
         run: helm lint salt-minion-kubernetes
       - name: helm lint (salt-minion-vcf)
         run: helm lint salt-minion-vcf/helm/salt-minion-vcf
-      - name: helm template (salt-master-kubernetes)
+      - name: helm lint (salt-key-operator)
+        run: helm lint salt-key-operator/helm/salt-key-operator
+      - name: helm template (salt-master-kubernetes, single replica)
         run: helm template test salt-master-kubernetes
+      - name: helm template (salt-master-kubernetes, active-active)
+        run: |
+          helm template test salt-master-kubernetes \
+            --set agent.replicas=3 \
+            --set agent.masterKeySecretName=my-master-key \
+            --set service.perOrdinal.enabled=true
+      - name: helm template (salt-master-kubernetes, replicas>1 without masterKeySecretName must fail)
+        run: |
+          if helm template test salt-master-kubernetes --set agent.replicas=3 >/dev/null 2>&1; then
+            echo "expected this render to fail (masterKeySecretName required when replicas>1)" >&2
+            exit 1
+          fi
+      - name: helm template (salt-key-operator)
+        run: helm template test salt-key-operator/helm/salt-key-operator --include-crds
       - name: helm template (salt-minion-kubernetes, bundled kubectl, default)
         run: helm template test salt-minion-kubernetes --set agent.saltMasterHost=salt-master.example.com
       - name: helm template (salt-minion-kubernetes, init-container kubectl)
@@ -85,3 +122,9 @@ jobs:
           context: salt-minion-kubernetes
           push: false
           tags: salt-minion-kubernetes:ci
+      - name: Build salt-key-operator image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: salt-key-operator
+          push: false
+          tags: salt-key-operator:ci
