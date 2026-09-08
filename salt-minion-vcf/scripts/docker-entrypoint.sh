@@ -55,6 +55,11 @@ master_port: ${SALT_MASTER_PORT}
 publish_port: ${SALT_PUBLISH_PORT}
 master_tries: -1
 retry_dns: 30
+auth_timeout: ${SALT_AUTH_TIMEOUT:-60}
+master_alive_interval: ${SALT_MASTER_ALIVE_INTERVAL:-60}
+recon_default: ${SALT_RECON_DEFAULT:-1000}
+recon_max: ${SALT_RECON_MAX:-5000}
+recon_randomize: ${SALT_RECON_RANDOMIZE:-True}
 EOF
 
   # Preferred: pre-seed the master's actual public key so the minion trusts

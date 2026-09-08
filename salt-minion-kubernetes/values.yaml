@@ -1,6 +1,6 @@
 # Namespace where all salt-minion-kubernetes objects are deployed.
 # Must match the namespace used in kube-bench-job.
-namespace: kube-system
+namespace: salt
 
 agent:
   # Deployment mode:
@@ -74,6 +74,28 @@ agent:
   saltMasterPort: 4506
   # "publish" channel (publish_port).
   saltPublishPort: 4505
+
+  # Allow more time for minions to authenticate against the master before
+  # timing out and retrying - reduces "thundering herd" retry storms when
+  # many minions (re)connect at once, e.g. right after a master restart.
+  # Matches Salt's own default, set explicitly so it's documented here.
+  authTimeout: 60
+
+  # Proactively checks the TCP connection to the master every N seconds and
+  # reconnects if it's gone stale. Disabled (0) by default in Salt itself -
+  # without this, a minion sitting on a dead/rescheduled master's connection
+  # only notices at the next job dispatch attempt.
+  masterAliveInterval: 60
+
+  # ZeroMQ transport reconnect backoff: attempts start at reconDefault ms
+  # and back off up to reconMax ms; reconRandomize jitters the actual delay
+  # so many minions reconnecting at once (e.g. after a master restart)
+  # don't all retry in lockstep - Salt's own documented fix for reconnect
+  # thundering herds.
+  reconDefault: 1000
+  reconMax: 5000
+  reconRandomize: true
+
   minion:
     # Salt minion ID. Leave empty to use the pod hostname.
     id: ""
@@ -135,7 +157,7 @@ rbac:
 
 # kube-bench coordination settings — must match kube-bench-job chart values.
 kubeBench:
-  namespace: kube-system
+  namespace: salt
   # Must match cronJob.name in the kube-bench-job chart.
   cronJobName: kube-bench
   # Label applied to assessment Jobs and their pods for tracking.

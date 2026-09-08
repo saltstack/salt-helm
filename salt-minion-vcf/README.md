@@ -419,7 +419,7 @@ Do not put VCF or other target-system credentials in the ConfigMap.
 ```bash
 helm upgrade --install vcf-executor \
   ./helm/salt-minion-vcf \
-  --namespace vcf-salt \
+  --namespace salt \
   --create-namespace \
   --set salt.master=salt-master.example.com \
   --set image.repository=my-registry/salt-minion-vcf \

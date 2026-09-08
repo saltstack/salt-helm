@@ -133,7 +133,7 @@ python3 scripts/onboarding/vcf-ops-onboard.py \
   --ops-host vcfops.example.com \
   --ops-user admin \
   --deployment kubernetes \
-  --namespace vcf-salt \
+  --namespace salt \
   --release-name vcf-executor
 
 # Skip the interactive master picker if you already know the master ID
@@ -153,7 +153,7 @@ python3 scripts/onboarding/vcf-ops-onboard.py \
 python3 scripts/onboarding/vcf-ops-onboard.py \
   --action rotate --deployment kubernetes \
   --ops-host vcfops.example.com --ops-user admin \
-  --namespace vcf-salt --release-name vcf-executor
+  --namespace salt --release-name vcf-executor
 
 # List trusted minions
 python3 scripts/onboarding/vcf-ops-onboard.py \

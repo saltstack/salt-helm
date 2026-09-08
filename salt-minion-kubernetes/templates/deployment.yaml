@@ -78,6 +78,16 @@ spec:
               value: {{ .Values.agent.saltMasterPort | quote }}
             - name: SALT_PUBLISH_PORT
               value: {{ .Values.agent.saltPublishPort | quote }}
+            - name: SALT_AUTH_TIMEOUT
+              value: {{ .Values.agent.authTimeout | quote }}
+            - name: SALT_MASTER_ALIVE_INTERVAL
+              value: {{ .Values.agent.masterAliveInterval | quote }}
+            - name: SALT_RECON_DEFAULT
+              value: {{ .Values.agent.reconDefault | quote }}
+            - name: SALT_RECON_MAX
+              value: {{ .Values.agent.reconMax | quote }}
+            - name: SALT_RECON_RANDOMIZE
+              value: {{ .Values.agent.reconRandomize | quote }}
             {{- if .Values.agent.minion.id }}
             - name: SALT_MINION_ID
               value: {{ .Values.agent.minion.id | quote }}

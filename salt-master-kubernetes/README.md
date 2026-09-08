@@ -40,11 +40,12 @@ The following table lists the most commonly overridden values. See
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| `namespace` | Namespace for all chart resources. | `kube-system` |
+| `namespace` | Namespace for all chart resources. | `salt-master` |
 | `agent.image.repository` | Salt master image repository. | `salt-master` |
 | `agent.image.tag` | Salt master image tag. | `3007.1` |
 | `agent.autoAccept` | Auto-accept new minion keys instead of requiring `salt-key -a` per minion. Leave `false` for a production master. | `false` |
 | `agent.masterId` | Sets `id:` on the master itself. Empty uses the pod hostname. | `""` |
+| `agent.presenceEvents` | Fires `salt/presence/present`/`change` events so `manage.present`/`manage.status` reflect which minions are actually connected right now. | `true` |
 | `agent.persistence.enabled` | Persist the master's `/etc/salt/pki` (its own keypair *and* the accepted-minion key list) across pod restarts. | `false` |
 | `agent.persistence.type` | `pvc` or `hostPath`. `hostPath` requires `agent.nodeSelector`. | `pvc` |
 | `agent.nodeSelector` | Pins the pod to a node. Required when `agent.persistence.type=hostPath`. | `{}` |

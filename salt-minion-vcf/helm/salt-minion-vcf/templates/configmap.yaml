@@ -11,6 +11,11 @@ data:
     publish_port: {{ .Values.salt.publishPort }}
     master_tries: {{ .Values.salt.masterTries }}
     retry_dns: {{ .Values.salt.retryDns }}
+    auth_timeout: {{ .Values.salt.authTimeout }}
+    master_alive_interval: {{ .Values.salt.masterAliveInterval }}
+    recon_default: {{ .Values.salt.reconDefault }}
+    recon_max: {{ .Values.salt.reconMax }}
+    recon_randomize: {{ .Values.salt.reconRandomize }}
     {{- if .Values.salt.masterFinger }}
     master_finger: {{ .Values.salt.masterFinger | quote }}
     {{- end }}
