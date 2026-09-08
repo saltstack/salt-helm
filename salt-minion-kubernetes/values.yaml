@@ -49,7 +49,7 @@ agent:
     # this at a plain saltstack/salt image instead if you don't need either
     # extension.
     repository: ghcr.io/saltstack/salt-helm/salt-minion-kubernetes
-    tag: "0.1.0"
+    tag: "0.1.1"
     pullPolicy: IfNotPresent
   kubectl:
     # Set to false only when agent.image is NOT this chart's own
@@ -66,7 +66,16 @@ agent:
   # Sets SALT_LOG_LEVEL / `log_level:` on the minion.
   logLevel: info
   replicas: 1
-  # Salt master address. Required when authMode=in_cluster.
+  # Salt master address. Required when authMode=in_cluster. Also accepts a
+  # list, for Salt's native multi-master mode
+  # (https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html) -
+  # one independent, simultaneous connection per address, not failover.
+  # Point this at every replica address of an active-active
+  # salt-master-kubernetes release instead of a single master, e.g.:
+  #   saltMasterHost:
+  #     - salt-master-kubernetes-0.salt-master-kubernetes-headless.salt-master.svc.cluster.local
+  #     - salt-master-kubernetes-1.salt-master-kubernetes-headless.salt-master.svc.cluster.local
+  #     - salt-master-kubernetes-2.salt-master-kubernetes-headless.salt-master.svc.cluster.local
   saltMasterHost: ""
   # "ret" channel (master_port). Override alongside saltPublishPort whenever
   # the master isn't reachable on its default ports as-is -- e.g. behind a
@@ -101,6 +110,28 @@ agent:
     id: ""
     # Additional grains injected via the minion config ConfigMap.
     grains: {}
+
+    # Name of an EXISTING Kubernetes Secret (created out-of-band, never via
+    # Helm values) with keys 'private-key-b64' and 'public-key-b64' - a
+    # base64-encoded PEM RSA keypair for the minion itself. REQUIRED (the
+    # chart fails fast otherwise - see allowSelfGeneratedKey below for the
+    # escape hatch): the minion's public key must already be registered as
+    # trusted (e.g. via salt-key-operator's SaltMinionKey - see
+    # ../../salt-key-operator) *before* the minion starts, so it must be
+    # handed that exact keypair rather than generating its own, which the
+    # trust store would never have been told about. With
+    # agent.persistence.enabled=false (the default), a self-generated key
+    # also wouldn't even survive a pod restart.
+    keySecretName: ""
+
+    # Explicit opt-out of the keySecretName requirement above - falls back
+    # to the minion generating its own keypair on first start. Only makes
+    # sense combined with agent.persistence.enabled=true (otherwise a fresh
+    # keypair, and a fresh unaccepted minion, appears on every pod
+    # restart). Named explicitly rather than just leaving keySecretName
+    # empty, so choosing this legacy behavior is a deliberate, visible
+    # decision in your values file.
+    allowSelfGeneratedKey: false
 
   # Optional Vault integration (saltext.vault, baked into this chart's
   # default image) - lets pillar values reference sdb://vault_sdb/<path>:<key>

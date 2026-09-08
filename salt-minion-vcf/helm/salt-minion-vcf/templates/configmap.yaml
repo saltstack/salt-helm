@@ -6,7 +6,17 @@ metadata:
     {{- include "salt-minion-vcf.labels" . | nindent 4 }}
 data:
   10-master.conf: |
+    {{- if kindIs "slice" .Values.salt.master }}
+    # Salt's native multi-master mode: one independent, simultaneous
+    # connection per address, not failover - see
+    # https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html
+    master:
+      {{- range .Values.salt.master }}
+      - {{ . | quote }}
+      {{- end }}
+    {{- else }}
     master: {{ .Values.salt.master | quote }}
+    {{- end }}
     master_port: {{ .Values.salt.masterPort }}
     publish_port: {{ .Values.salt.publishPort }}
     master_tries: {{ .Values.salt.masterTries }}
