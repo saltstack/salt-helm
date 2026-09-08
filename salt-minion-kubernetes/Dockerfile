@@ -49,11 +49,19 @@ RUN set -eu; \
     fi; \
     sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL}#" /etc/apt/sources.list.d/salt.sources
 
+# ca-certificates/curl/gnupg/tini/iproute2/dnsutils/netcat-openbsd are OS
+# packages that should track the latest security patches from Ubuntu's own
+# release channel rather than being frozen at build time - only Salt's own
+# packages are version-pinned (SALT_VERSION), just below.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg tini iproute2 dnsutils netcat-openbsd \
-    && mkdir -m 0755 -p /etc/apt/keyrings \
-    && curl --retry 5 --retry-all-errors --retry-delay 2 -fsSL "${SALT_GPG_KEY_URL}" \
-       | gpg --dearmor > /etc/apt/keyrings/salt-archive-keyring.pgp \
+    && mkdir -p /etc/apt/keyrings \
+    && chmod 0755 /etc/apt/keyrings \
+    && curl --retry 5 --retry-all-errors --retry-delay 2 -fsSL \
+       -o /tmp/salt-archive-keyring.asc "${SALT_GPG_KEY_URL}" \
+    && gpg --dearmor -o /etc/apt/keyrings/salt-archive-keyring.pgp /tmp/salt-archive-keyring.asc \
+    && rm -f /tmp/salt-archive-keyring.asc \
     && printf 'Package: salt-*\nPin: version 3008.*\nPin-Priority: 1001\n' \
        > /etc/apt/preferences.d/salt-pin-1001 \
     && apt-get update \
@@ -87,9 +95,11 @@ RUN if [ "$INCLUDE_KUBECTL" = "true" ]; then \
             "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl"; \
         curl -fsSL -o /tmp/kubectl.sha256 \
             "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl.sha256"; \
-        echo "$(cat /tmp/kubectl.sha256)  /usr/local/bin/kubectl" | sha256sum -c -; \
+        printf '%s  /usr/local/bin/kubectl\n' "$(cat /tmp/kubectl.sha256)" \
+            > /tmp/kubectl.sha256.check; \
+        sha256sum -c /tmp/kubectl.sha256.check; \
         chmod +x /usr/local/bin/kubectl; \
-        rm -f /tmp/kubectl.sha256; \
+        rm -f /tmp/kubectl.sha256 /tmp/kubectl.sha256.check; \
     fi
 
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
@@ -105,6 +115,9 @@ RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh /usr/local/bin/healthcheck.sh
                 /var/cache/salt/minion /var/log/salt \
     && chown -R salt:salt /etc/salt /var/cache/salt /var/log/salt
 
+# These are empty placeholder defaults meant to be supplied at container
+# start (env var or Kubernetes Secret) - not secrets baked into the image.
+# hadolint ignore=DL3064
 ENV SALT_MASTER="" \
     SALT_MASTER_PORT="4506" \
     SALT_PUBLISH_PORT="4505" \

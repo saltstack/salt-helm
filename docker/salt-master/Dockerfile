@@ -11,6 +11,10 @@ FROM debian:12-slim
 # reproducibly carries one specific Salt version - see CHANGELOG.md.
 ARG SALT_VERSION=3008.2
 
+# ca-certificates/curl are OS packages that should track the latest security
+# patches from the base image's own release channel rather than being frozen
+# at build time - only Salt's own packages are version-pinned (SALT_VERSION).
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -32,13 +36,15 @@ RUN set -eu; \
         https://github.com/saltstack/salt-bootstrap/releases/latest/download/bootstrap-salt.sh; \
     curl -fsSL -o /tmp/bootstrap-salt.sh.sha256 \
         https://github.com/saltstack/salt-bootstrap/releases/latest/download/bootstrap-salt.sh.sha256; \
-    (cd /tmp && sha256sum -c bootstrap-salt.sh.sha256); \
+    printf '%s  /tmp/bootstrap-salt.sh\n' "$(cut -d' ' -f1 /tmp/bootstrap-salt.sh.sha256)" \
+        > /tmp/bootstrap-salt.sh.sha256.check; \
+    sha256sum -c /tmp/bootstrap-salt.sh.sha256.check; \
     if [ "$SALT_VERSION" = "latest" ]; then \
         sh /tmp/bootstrap-salt.sh -X -N -M -P onedir; \
     else \
         sh /tmp/bootstrap-salt.sh -X -N -M -P onedir "$SALT_VERSION"; \
     fi; \
-    rm -f /tmp/bootstrap-salt.sh /tmp/bootstrap-salt.sh.sha256
+    rm -f /tmp/bootstrap-salt.sh /tmp/bootstrap-salt.sh.sha256 /tmp/bootstrap-salt.sh.sha256.check
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

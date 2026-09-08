@@ -24,11 +24,19 @@ RUN set -eu; \
     fi; \
     sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL}#" /etc/apt/sources.list.d/salt.sources
 
+# ca-certificates/curl/gnupg/tini are OS packages that should track the
+# latest security patches from Ubuntu's own release channel rather than
+# being frozen at build time - only Salt's own packages are version-pinned
+# (SALT_VERSION), just below.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg tini \
-    && mkdir -m 0755 -p /etc/apt/keyrings \
-    && curl --retry 5 --retry-all-errors --retry-delay 2 -fsSL "${SALT_GPG_KEY_URL}" \
-       | gpg --dearmor > /etc/apt/keyrings/salt-archive-keyring.pgp \
+    && mkdir -p /etc/apt/keyrings \
+    && chmod 0755 /etc/apt/keyrings \
+    && curl --retry 5 --retry-all-errors --retry-delay 2 -fsSL \
+       -o /tmp/salt-archive-keyring.asc "${SALT_GPG_KEY_URL}" \
+    && gpg --dearmor -o /etc/apt/keyrings/salt-archive-keyring.pgp /tmp/salt-archive-keyring.asc \
+    && rm -f /tmp/salt-archive-keyring.asc \
     && printf 'Package: salt-*\nPin: version 3008.*\nPin-Priority: 1001\n' \
        > /etc/apt/preferences.d/salt-pin-1001 \
     && apt-get update \

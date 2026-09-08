@@ -14,7 +14,7 @@ if [ -z "${SALT_MINION_ID:-}" ]; then
   if [ -n "${POD_NAME:-}" ]; then
     SALT_MINION_ID="${POD_NAME}"
   else
-    SALT_MINION_ID="${SALT_MINION_ID_PREFIX:-vcf-salt-executor}-${HOSTNAME}"
+    SALT_MINION_ID="${SALT_MINION_ID_PREFIX:-vcf-salt-executor}-$(hostname)"
   fi
 fi
 
