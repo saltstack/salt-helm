@@ -3,6 +3,19 @@
 Installs RBAC and an optional Salt minion Deployment for running CIS Kubernetes
 compliance assessments via kube-bench on-demand Jobs.
 
+This directory is also the image's own project: `Dockerfile` builds a
+self-contained Salt minion (core Salt plus `saltext.vault` and
+`saltext.kubernetes`, both pip-installed from PyPI — see
+`salt-extensions.txt`) with `kubectl` bundled in. Build it the same way as
+[`salt-minion-vcf`](../salt-minion-vcf/README.md):
+
+```bash
+docker build -t salt-minion-kubernetes:0.1.0 .
+```
+
+See [`CHANGELOG.md`](CHANGELOG.md) for which Salt/extension versions each
+published image and chart release tag actually carries.
+
 Supports two deployment modes, selected via `agent.authMode`:
 
 - **in_cluster** (default) — the Salt minion runs as a Deployment inside the
@@ -59,8 +72,9 @@ The following table lists the most commonly overridden values. See
 | --- | --- | --- |
 | `namespace` | Namespace for all chart resources. Must match `kube-bench-job`'s namespace. | `kube-system` |
 | `agent.authMode` | `in_cluster` or `external`. | `in_cluster` |
-| `agent.image.repository` | Salt minion image repository. | `saltstack/salt` |
-| `agent.image.tag` | Salt minion image tag. | `3007.1` |
+| `agent.image.repository` | Salt minion image repository. | `ghcr.io/saltstack/salt-helm/salt-minion-kubernetes` |
+| `agent.image.tag` | Salt minion image tag. | `0.1.0` |
+| `agent.kubectl.bundled` | Skip the install-kubectl init container — true when `agent.image` already bundles `kubectl` (the default image does). | `true` |
 | `agent.saltMasterHost` | Salt master address. Required for `in_cluster` mode. | `""` |
 | `agent.saltMasterPort` | Salt master "ret" port (`master_port`). Override alongside `agent.saltPublishPort` when the master isn't reachable on its default ports, e.g. behind a Kubernetes NodePort Service. | `4506` |
 | `agent.saltPublishPort` | Salt master "publish" port (`publish_port`). | `4505` |
@@ -86,6 +100,15 @@ on file — requiring a manual `salt-key -d`/`-a` cycle each time. Enable
 - `hostPath` — for clusters without a dynamic provisioner (e.g. bare kubeadm
   labs). Ties the data to a specific node, so `agent.nodeSelector` must also
   be set.
+
+### Vault integration
+
+`saltext.vault` is baked into the default image, giving pillar values an
+`sdb` driver so they can reference `sdb://vault_sdb/<path>:<key>` instead of
+plaintext. Configure it via `agent.vault.*` in `values.yaml` — same
+mechanism and env vars as
+[`salt-minion-vcf`'s Vault integration](../salt-minion-vcf/README.md#vault-integration),
+disabled unless `agent.vault.addr` is set.
 
 ### kube-bench coordination
 

@@ -13,68 +13,70 @@ this repo (e.g. `salt-minion-vcf`).
 
 ## Prerequisites
 
-- Docker, for building the images
+- Docker, for building the images (or skip straight to the published images —
+  see [`docs/releasing.md`](releasing.md))
 - Helm 3+ and `kubectl` pointed at your target cluster
 - A registry (or another way to get images onto your nodes, e.g. `ctr images
   import` for air-gapped clusters with no registry configured)
-- A checkout of
-  [`saltext-kubernetes`](https://github.com/saltstack/saltext-kubernetes) —
-  the minion image is built *from* that repo (see below)
 
 ## 1. Build the Docker images
 
-### 1a. salt-master (self-contained)
+Both images are self-contained — pip-installed Salt extensions from PyPI
+rather than a checkout of the extension's own repo — so either builds
+directly from this repo, with that image's own directory as the build
+context.
 
-The master image needs nothing outside this repo — build it directly:
+### 1a. salt-master
 
 ```bash
-docker build -t salt-master:3007.1 docker/salt-master
+docker build -t salt-master:3008.2 docker/salt-master
 ```
 
-Override `SALT_VERSION` to pin a specific Salt release (defaults to
-`latest`):
+Override `SALT_VERSION` to pin a different Salt release (defaults to
+`3008.2` — see [`docker/salt-master/CHANGELOG.md`](../docker/salt-master/CHANGELOG.md)):
 
 ```bash
 docker build --build-arg SALT_VERSION=3007.1 -t salt-master:3007.1 docker/salt-master
 ```
 
-### 1b. salt-minion (built from saltext-kubernetes)
+### 1b. salt-minion-kubernetes
 
-Unlike the master, the minion image installs `saltext.kubernetes` from a
-local source tree, so it must be built with a `saltext-kubernetes` checkout
-as the build context — not this repo:
+Preloaded with `saltext.kubernetes` (for `kube_bench_cache`, used in step 3)
+and `saltext.vault` — see
+[`salt-minion-kubernetes/salt-extensions.txt`](../salt-minion-kubernetes/salt-extensions.txt)
+and [`CHANGELOG.md`](../salt-minion-kubernetes/CHANGELOG.md) for exact
+versions:
 
 ```bash
-git clone https://github.com/saltstack/saltext-kubernetes.git
-cd saltext-kubernetes
-
-docker build -f docker/salt-minion/Dockerfile \
-  --build-arg SALT_VERSION=3007.1 \
-  --build-arg SALTEXT_KUBERNETES_VERSION="$(git describe --tags --always --dirty | sed -E 's/^v//; s/-/+/')" \
-  -t salt-minion:3007.1 .
+docker build -t salt-minion-kubernetes:0.1.0 salt-minion-kubernetes
 ```
 
-If you're behind a proxy/VPN that blocks public PyPI, route the
-`saltext.kubernetes` install through an internal mirror instead:
+If you're behind a proxy/VPN that blocks public PyPI, route the extension
+installs through an internal mirror instead:
 
 ```bash
-docker build -f docker/salt-minion/Dockerfile \
-  --build-arg SALT_VERSION=3007.1 \
-  --build-arg SALTEXT_KUBERNETES_VERSION="$(git describe --tags --always --dirty | sed -E 's/^v//; s/-/+/')" \
+docker build \
   --build-arg PIP_INDEX_URL=<your-mirror-pypi-simple-url> \
   --build-arg PIP_TRUSTED_HOST=<your-mirror-host> \
   --build-arg PIP_ONLY_BINARY=:all: \
-  -t salt-minion:3007.1 .
+  -t salt-minion-kubernetes:0.1.0 salt-minion-kubernetes
 ```
 
-See [`docker/salt-minion/README.md`](../docker/salt-minion/README.md) and
-[`docker/salt-master/README.md`](../docker/salt-master/README.md) for the
-full build-arg reference for each image.
+See [`docker/salt-master/README.md`](../docker/salt-master/README.md) and
+[`salt-minion-kubernetes/README.md`](../salt-minion-kubernetes/README.md) for
+the full build-arg reference for each image.
 
 ### 1c. Get the images onto your cluster
 
+Already published, independently of this build step — see
+[`docs/releasing.md`](releasing.md) for the exact `ghcr.io/saltstack/salt-helm/...`
+paths — so most of the time step 1 is only needed to build a local/patched
+variant. If you do need to move a locally-built image onto your cluster
+yourself:
+
 - **With a registry:** tag and push both images, then reference
-  `<registry>/salt-master`/`<registry>/salt-minion` in the Helm values below.
+  `<registry>/salt-master`/`<registry>/salt-minion-kubernetes` in the Helm
+  values below.
 - **Without a registry** (air-gapped/test clusters): `docker save` each
   image and `ctr -n k8s.io images import` it directly into every node's
   containerd store, then set `image.pullPolicy: Never` in the Helm values so
@@ -117,7 +119,7 @@ for the full list):
 
 | Value | Purpose |
 | --- | --- |
-| `agent.image.repository` / `agent.image.tag` | The `salt-minion` image built in step 1b. |
+| `agent.image.repository` / `agent.image.tag` | The `salt-minion-kubernetes` image built in step 1b (or the published one — see `docs/releasing.md`). |
 | `agent.saltMasterHost` | The master's address. If `salt-master-kubernetes` uses `service.type=NodePort`, this is any node's IP — the NodePort is open on every node regardless of which one runs the master pod. |
 | `agent.saltMasterPort` | Master's "ret" port. **Must be the NodePort value** (e.g. `30506`), not `4506`, when the master uses `service.type=NodePort`. |
 | `agent.saltPublishPort` | Master's "publish" port. **Must be the NodePort value** (e.g. `30505`), not `4505`, same reasoning. |

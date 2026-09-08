@@ -13,3 +13,13 @@ saltext.vcf[all]==1.0.0
 # README.md "Vault Integration" section.
 # Source: https://github.com/salt-extensions/saltext-vault
 saltext.vault==1.8.0
+
+# BMC/hardware management execution and state modules.
+# Source: https://github.com/salt-extensions/saltext-bmc
+saltext.bmc==0.0.1
+
+# Kubernetes execution and state modules (cluster API access from the
+# minion) - see also salt-minion-kubernetes, which loads the same extension
+# for the dedicated in-cluster/kube-bench minion image.
+# Source: https://github.com/salt-extensions/saltext-kubernetes
+saltext.kubernetes==2.1.0

@@ -92,18 +92,39 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+# No numeric runAsUser/runAsGroup/fsGroup here on purpose - the image runs
+# as the 'salt' system user salt-common's own postinst creates, whose
+# numeric uid isn't a stable constant to pin. runAsNonRoot alone still gets
+# enforced (Kubernetes checks whatever user the image resolves to).
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 10000
-  runAsGroup: 10000
-  fsGroup: 10000
 
+# No added capabilities: every volume type (PVC or emptyDir) mounts
+# /etc/salt/pki/minion back root-owned regardless of fsGroup, and
+# capabilities.add can't fix that either - not every container runtime
+# populates the *ambient* capability set for a non-root container
+# (confirmed on this project's own test cluster: CapBnd includes
+# CHOWN/FOWNER, CapEff/CapAmb are still empty, so the capability is
+# granted but unusable), and even setcap-based file capabilities need
+# allowPrivilegeEscalation: true to take effect on exec. The initContainer
+# below (runs as root, once, briefly) is the tradeoff instead: this
+# long-running container never runs as root, ever.
 containerSecurityContext:
   allowPrivilegeEscalation: false
   runAsNonRoot: true
   capabilities:
     drop:
       - ALL
+
+# One-time root step (never the long-running minion) that chowns the pki
+# volume to the 'salt' user - see containerSecurityContext comment above
+# for why this needs to be root rather than a capability grant on the main
+# container. Reuses image.repository/tag itself (not e.g. busybox) so it
+# can resolve 'salt' by name via that image's own /etc/passwd, rather than
+# duplicating its numeric uid here.
+initContainers:
+  fixPkiPerms:
+    enabled: true
 
 livenessProbe:
   enabled: true

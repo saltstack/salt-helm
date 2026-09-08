@@ -1,0 +1,40 @@
+name: release (salt-minion-kubernetes chart)
+
+# Tag scheme: salt-minion-kubernetes-chart/vX.Y.Z -- must match the
+# `version:` in salt-minion-kubernetes/Chart.yaml. See docs/releasing.md.
+on:
+  push:
+    tags:
+      - "salt-minion-kubernetes-chart/v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Derive version and verify it matches Chart.yaml
+        id: meta
+        run: |
+          set -eu
+          tag_version="${GITHUB_REF_NAME#salt-minion-kubernetes-chart/v}"
+          chart_version="$(helm show chart salt-minion-kubernetes | awk '/^version:/ {print $2}')"
+          if [ "$tag_version" != "$chart_version" ]; then
+            echo "Tag version $tag_version does not match Chart.yaml version $chart_version" >&2
+            exit 1
+          fi
+          grep -Eq "^#+ salt-minion-kubernetes-chart/v${tag_version}$" salt-minion-kubernetes/CHANGELOG.md \
+            || { echo "No CHANGELOG.md entry for salt-minion-kubernetes-chart/v${tag_version}" >&2; exit 1; }
+          echo "version=$tag_version" >> "$GITHUB_OUTPUT"
+      - name: helm lint
+        run: helm lint salt-minion-kubernetes
+      - name: helm package
+        run: helm package salt-minion-kubernetes
+      - name: helm registry login
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: helm push
+        run: helm push "salt-minion-kubernetes-${{ steps.meta.outputs.version }}.tgz" "oci://ghcr.io/${{ github.repository }}/charts"

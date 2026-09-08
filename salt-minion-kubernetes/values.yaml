@@ -8,16 +8,63 @@ agent:
   #   external   — create RBAC only; the minion runs outside the cluster
   authMode: in_cluster
 
+  # No numeric runAsUser/runAsGroup/fsGroup here on purpose - the image runs
+  # as the 'salt' system user salt-common's own postinst creates, whose
+  # numeric uid isn't a stable constant to pin. runAsNonRoot alone still
+  # gets enforced (Kubernetes checks whatever user the image resolves to).
+  podSecurityContext:
+    runAsNonRoot: true
+
+  # No added capabilities: when agent.persistence.enabled mounts a
+  # PVC/hostPath at /etc/salt/pki, it comes back root-owned regardless of
+  # fsGroup, and capabilities.add can't fix that either - not every
+  # container runtime populates the *ambient* capability set for a
+  # non-root container (confirmed on this project's own test cluster:
+  # CapBnd includes CHOWN/FOWNER, CapEff/CapAmb are still empty, so the
+  # capability is granted but unusable), and even setcap-based file
+  # capabilities need allowPrivilegeEscalation: true to take effect on
+  # exec. initContainers.fixPkiPerms below (runs as root, once, briefly)
+  # is the tradeoff instead: this long-running container never runs as
+  # root, ever.
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - ALL
+
+  # Only relevant when persistence.enabled mounts a volume at /etc/salt/pki.
+  # Reuses image.repository/tag itself (not e.g. busybox) so it can resolve
+  # 'salt' by name via that image's own /etc/passwd, rather than
+  # duplicating its numeric uid here.
+  initContainers:
+    fixPkiPerms:
+      enabled: true
+
   # ── in_cluster mode settings ──────────────────────────────────────────────
   image:
-    repository: saltstack/salt
-    tag: "3007.1"
+    # Published by this repo (see ../docs/releasing.md and CHANGELOG.md for
+    # exactly which Salt/extension versions this tag carries) - preloaded
+    # with saltext.vault and saltext.kubernetes on top of core Salt. Point
+    # this at a plain saltstack/salt image instead if you don't need either
+    # extension.
+    repository: ghcr.io/saltstack/salt-helm/salt-minion-kubernetes
+    tag: "0.1.0"
     pullPolicy: IfNotPresent
   kubectl:
-    # Pinned kubectl version downloaded by the init container.
+    # Set to false only when agent.image is NOT this chart's own
+    # salt-minion-kubernetes image (e.g. plain saltstack/salt) - true skips
+    # the install-kubectl init container entirely, since this image already
+    # bundles kubectl at build time (see Dockerfile).
+    bundled: true
+    # Pinned kubectl version downloaded by the init container. Only used
+    # when kubectl.bundled is false.
     version: "v1.30.2"
-    # Image used in the init container to run curl.
+    # Image used in the init container to run curl. Only used when
+    # kubectl.bundled is false.
     initImage: "curlimages/curl:8.7.1"
+  # Sets SALT_LOG_LEVEL / `log_level:` on the minion.
+  logLevel: info
   replicas: 1
   # Salt master address. Required when authMode=in_cluster.
   saltMasterHost: ""
@@ -32,6 +79,21 @@ agent:
     id: ""
     # Additional grains injected via the minion config ConfigMap.
     grains: {}
+
+  # Optional Vault integration (saltext.vault, baked into this chart's
+  # default image) - lets pillar values reference sdb://vault_sdb/<path>:<key>
+  # instead of plaintext. All optional; disabled unless addr is set. Prefer
+  # secretIdFile/tokenFile (a mounted Secret) over secretId/token (plain
+  # values, visible in `kubectl get pod -o yaml`).
+  vault:
+    addr: ""
+    authMethod: approle
+    roleId: ""
+    secretId: ""
+    secretIdFile: ""
+    token: ""
+    tokenFile: ""
+    sdbProfile: vault_sdb
 
   # Persists the minion's generated keypair (/etc/salt/pki) across pod
   # restarts. Without this, a fresh keypair is generated every time the

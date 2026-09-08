@@ -28,9 +28,23 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      securityContext:
+        {{- toYaml .Values.agent.podSecurityContext | nindent 8 }}
+      {{- $needFixPkiPerms := and .Values.agent.persistence.enabled .Values.agent.initContainers.fixPkiPerms.enabled }}
+      {{- if or (not .Values.agent.kubectl.bundled) $needFixPkiPerms }}
       initContainers:
+        {{- if not .Values.agent.kubectl.bundled }}
         - name: install-kubectl
           image: {{ .Values.agent.kubectl.initImage }}
+          # curlimages/curl's own image sets USER curl_user (a name, not a
+          # number) - Kubernetes' runAsNonRoot check (inherited from
+          # agent.podSecurityContext above) can't resolve that without
+          # executing code inside the image, and refuses to start the
+          # container at all ("cannot verify user is non-root") unless
+          # overridden here with the actual numeric uid/gid.
+          securityContext:
+            runAsUser: 100
+            runAsGroup: 101
           command:
             - sh
             - -c
@@ -40,6 +54,19 @@ spec:
           volumeMounts:
             - name: tools
               mountPath: /tools
+        {{- end }}
+        {{- if $needFixPkiPerms }}
+        - name: fix-pki-perms
+          image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
+          command: ["chown", "-R", "salt:salt", "/etc/salt/pki"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+          volumeMounts:
+            - name: pki
+              mountPath: /etc/salt/pki
+        {{- end }}
+      {{- end }}
       containers:
         - name: salt-minion
           image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
@@ -55,24 +82,52 @@ spec:
             - name: SALT_MINION_ID
               value: {{ .Values.agent.minion.id | quote }}
             {{- end }}
+            - name: SALT_LOG_LEVEL
+              value: {{ .Values.agent.logLevel | quote }}
+            # Vault integration (saltext.vault) - all optional, disabled
+            # unless VAULT_ADDR is set. See values.yaml agent.vault.
+            - name: VAULT_ADDR
+              value: {{ .Values.agent.vault.addr | quote }}
+            - name: VAULT_AUTH_METHOD
+              value: {{ .Values.agent.vault.authMethod | quote }}
+            - name: VAULT_ROLE_ID
+              value: {{ .Values.agent.vault.roleId | quote }}
+            - name: VAULT_SECRET_ID
+              value: {{ .Values.agent.vault.secretId | quote }}
+            - name: VAULT_SECRET_ID_FILE
+              value: {{ .Values.agent.vault.secretIdFile | quote }}
+            - name: VAULT_TOKEN
+              value: {{ .Values.agent.vault.token | quote }}
+            - name: VAULT_TOKEN_FILE
+              value: {{ .Values.agent.vault.tokenFile | quote }}
+            - name: VAULT_SDB_PROFILE
+              value: {{ .Values.agent.vault.sdbProfile | quote }}
+            {{- if not .Values.agent.kubectl.bundled }}
             - name: PATH
               value: "/opt/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            {{- end }}
           volumeMounts:
             - name: pillar
               mountPath: /srv/pillar
               readOnly: true
+            {{- if not .Values.agent.kubectl.bundled }}
             - name: tools
               mountPath: /opt/tools
+            {{- end }}
             {{- if .Values.agent.persistence.enabled }}
             - name: pki
               mountPath: /etc/salt/pki
             {{- end }}
+          securityContext:
+            {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
       volumes:
         - name: pillar
           configMap:
             name: salt-minion-kubernetes-pillar
+        {{- if not .Values.agent.kubectl.bundled }}
         - name: tools
           emptyDir: {}
+        {{- end }}
         {{- if .Values.agent.persistence.enabled }}
         - name: pki
           {{- if eq .Values.agent.persistence.type "hostPath" }}
