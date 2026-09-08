@@ -5,5 +5,5 @@ Records what each `salt-minion-vcf-chart/vX.Y.Z` release tag (see
 independent of the image version it happens to default to — check here, not the tag number.
 
 ## salt-minion-vcf-chart/v0.1.0
-- Default image: `salt-minion-vcf:0.1.0` (see
+- Default image: `salt-minion-vcf:0.1.1` (see
   [`../../CHANGELOG.md`](../../CHANGELOG.md) for what that image version carries)

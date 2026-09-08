@@ -49,7 +49,7 @@ helm install salt-minion-vcf \
   oci://ghcr.io/saltstack/salt-helm/charts/salt-minion-vcf \
   --version 0.1.0 \
   --set image.repository=ghcr.io/saltstack/salt-helm/salt-minion-vcf \
-  --set image.tag=0.1.0 \
+  --set image.tag=0.1.1 \
   --set salt.master=salt-master.example.com
 ```
 
@@ -63,7 +63,7 @@ docker run -d \
   --name salt-minion-vcf \
   -e SALT_MASTER=salt-master.example.com \
   -v salt-minion-vcf-pki:/etc/salt/pki/minion \
-  ghcr.io/saltstack/salt-helm/salt-minion-vcf:0.1.0
+  ghcr.io/saltstack/salt-helm/salt-minion-vcf:0.1.1
 ```
 
 See each chart's `values.yaml` for the full list of configurable parameters.
