@@ -1,0 +1,40 @@
+# One Service per StatefulSet replica ordinal, each with its own NodePort -
+# needed for EXTERNAL (non-cluster) minions to do genuine multi-master
+# fan-out: the headless Service above only resolves inside the cluster, but
+# an external minion's `master:` list still needs one distinct, stable
+# address per master replica (see docker/salt-master/README.md and
+# https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html).
+# Disabled by default - only needed when minions run outside normal pod
+# scheduling, this chart's other documented use case (service.type=NodePort
+# above serves that same audience for a *single* master today).
+{{- if .Values.service.perOrdinal.enabled }}
+{{- range $i := until (int .Values.agent.replicas) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: salt-master-kubernetes-{{ $i }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    app.kubernetes.io/name: salt-master-kubernetes
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    helm.sh/chart: {{ $.Chart.Name }}-{{ $.Chart.Version }}
+spec:
+  type: NodePort
+  # StatefulSet pods are automatically labeled with their own ordinal pod
+  # name - select on it directly so this Service only ever routes to this
+  # one specific replica, never any other.
+  selector:
+    app: salt-master-kubernetes
+    statefulset.kubernetes.io/pod-name: salt-master-kubernetes-{{ $i }}
+  ports:
+    - name: publish
+      port: 4505
+      targetPort: publish
+      nodePort: {{ add $.Values.service.perOrdinal.basePublishPort $i }}
+    - name: ret
+      port: 4506
+      targetPort: ret
+      nodePort: {{ add $.Values.service.perOrdinal.baseRetPort $i }}
+---
+{{- end }}
+{{- end }}

@@ -1,8 +1,8 @@
-{{- if and .Values.agent.persistence.enabled (eq .Values.agent.persistence.type "hostPath") (not .Values.agent.nodeSelector) }}
-{{- fail "agent.persistence.type=hostPath requires agent.nodeSelector to pin the pod to the node holding the persisted /etc/salt/pki data" }}
+{{- if and (gt (int .Values.agent.replicas) 1) (not .Values.agent.masterKeySecretName) }}
+{{- fail "agent.masterKeySecretName is required when agent.replicas > 1 - without it, every replica generates its own independent keypair, and minions would trust a different master identity depending on which pod they happened to connect to. Pre-seed one shared keypair via an existing Secret." }}
 {{- end }}
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: salt-master-kubernetes
   namespace: {{ .Values.namespace }}
@@ -12,6 +12,12 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 spec:
+  # Headless Service, not the flat ClusterIP/NodePort one - StatefulSet needs
+  # this specifically for the stable per-ordinal DNS names
+  # (salt-master-kubernetes-N.salt-master-kubernetes-headless...) that let a
+  # minion's multi-master `master:` list address each replica individually.
+  # See templates/service-headless.yaml.
+  serviceName: salt-master-kubernetes-headless
   replicas: {{ .Values.agent.replicas }}
   selector:
     matchLabels:
@@ -29,17 +35,17 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.agent.podSecurityContext | nindent 8 }}
-      {{- if and .Values.agent.persistence.enabled .Values.agent.initContainers.fixPkiPerms.enabled }}
+      {{- if and .Values.agent.jobCache.persistence.enabled .Values.agent.initContainers.fixCachePerms.enabled }}
       initContainers:
-        - name: fix-pki-perms
+        - name: fix-cache-perms
           image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
-          command: ["chown", "-R", "salt:salt", "/etc/salt/pki"]
+          command: ["chown", "-R", "salt:salt", "/var/cache/salt/master/jobs"]
           securityContext:
             runAsUser: 0
             runAsNonRoot: false
           volumeMounts:
-            - name: pki
-              mountPath: /etc/salt/pki
+            - name: job-cache
+              mountPath: /var/cache/salt/master/jobs
       {{- end }}
       containers:
         - name: salt-master
@@ -71,22 +77,24 @@ spec:
               containerPort: 4505
             - name: ret
               containerPort: 4506
-          {{- if .Values.agent.persistence.enabled }}
+          {{- if .Values.agent.jobCache.persistence.enabled }}
           volumeMounts:
-            - name: pki
-              mountPath: /etc/salt/pki
+            - name: job-cache
+              mountPath: /var/cache/salt/master/jobs
           {{- end }}
           securityContext:
             {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
-      {{- if .Values.agent.persistence.enabled }}
-      volumes:
-        - name: pki
-          {{- if eq .Values.agent.persistence.type "hostPath" }}
-          hostPath:
-            path: {{ .Values.agent.persistence.hostPath.path }}
-            type: DirectoryOrCreate
-          {{- else }}
-          persistentVolumeClaim:
-            claimName: {{ .Values.agent.persistence.pvc.existingClaim | default "salt-master-kubernetes-pki" }}
-          {{- end }}
-      {{- end }}
+  {{- if .Values.agent.jobCache.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: job-cache
+      spec:
+        accessModes:
+          - {{ .Values.agent.jobCache.persistence.accessMode }}
+        {{- with .Values.agent.jobCache.persistence.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.agent.jobCache.persistence.size }}
+  {{- end }}

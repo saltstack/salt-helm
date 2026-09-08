@@ -1,0 +1,30 @@
+# Headless Service required by the StatefulSet (spec.serviceName above) - gives
+# each replica a stable per-ordinal DNS name:
+#   salt-master-kubernetes-<N>.salt-master-kubernetes-headless.<namespace>.svc.cluster.local
+# This is what lets an in-cluster minion's multi-master `master:` config list
+# address every master replica individually rather than being randomly
+# load-balanced across them by a normal Service - see
+# https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html and
+# salt-minion-vcf/helm/salt-minion-vcf/templates/service.yaml, which uses the
+# exact same pattern for its own StatefulSet.
+apiVersion: v1
+kind: Service
+metadata:
+  name: salt-master-kubernetes-headless
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: salt-master-kubernetes
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: salt-master-kubernetes
+  ports:
+    - name: publish
+      port: 4505
+      targetPort: publish
+    - name: ret
+      port: 4506
+      targetPort: ret
