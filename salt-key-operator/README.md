@@ -33,14 +33,20 @@ that entirely: creating one `SaltMinionKey` object gets a minion trusted by
 2. The controller writes `data[<minionId>] = <publicKey>` into that
    release's trusted-minions ConfigMap (see `salt-master-kubernetes`'s
    `agent.trustedMinions.*` values).
-3. `salt-master-kubernetes` mounts that same ConfigMap **read-only** at
-   `/etc/salt/pki/master/minions` in every replica. Kubelet's normal
-   ConfigMap-volume sync (bounded by kubelet's periodic resync, on the
-   order of a minute) delivers the update to every already-running pod -
-   **no `salt-key -a`, no pod restart**. Salt's own key-acceptance check
-   reads that directory from disk on every auth attempt rather than caching
-   it at startup, so the very next auth attempt after the file lands
-   succeeds.
+3. `salt-master-kubernetes` runs a `trusted-minions-sync` sidecar in every
+   replica that continuously copies that ConfigMap into the directory Salt
+   actually reads (`/etc/salt/pki/master/minions`) - **not** a direct
+   ConfigMap volume mount. Kubernetes always mounts ConfigMap volumes as
+   symlinks (the atomic `..data` indirection scheme), and Salt 3008's
+   `localfs_key` cache driver explicitly rejects symlinks in every key
+   read path as a PKI-tampering hardening measure - confirmed by testing
+   this directly against a real cluster, a minion whose key existed only
+   as a ConfigMap-mounted symlink was invisible to Salt and got rejected.
+   `cp` dereferences a symlink source by default, which is what makes the
+   sidecar's copy actually work. No `salt-key -a`, no pod restart -
+   propagation is bounded by kubelet's ConfigMap resync (on the order of a
+   minute) plus the sidecar's own poll interval (`syncIntervalSeconds`,
+   default 15s).
 4. Deleting the `SaltMinionKey` removes the entry the same way, via a
    finalizer.
 
@@ -57,18 +63,19 @@ that entirely: creating one `SaltMinionKey` object gets a minion trusted by
   release in the same namespace isn't supported by this auto-discovery
   (the controller returns an error - `NoMasterConfigMap` if none, an
   ambiguity error if more than one - rather than guessing).
-- **No exec-into-pod, no shared writable volume across replicas.** The only
-  thing shared between the operator and the master pods is one ConfigMap,
-  mounted read-only. This is deliberate - it keeps both sides simple and
-  avoids the master pods needing any special permissions or the operator
-  needing to know which specific pods exist.
+- **No exec-into-pod from the operator, no volume shared *across*
+  replicas.** The operator itself only ever writes to one ConfigMap - it
+  never touches a master pod directly. Making that ConfigMap's content
+  actually usable by Salt is `salt-master-kubernetes`'s own problem, solved
+  there with a per-pod `trusted-minions-sync` sidecar and a per-pod
+  `emptyDir` (see that chart's `templates/statefulset.yaml`) - not shared
+  between replicas, just between the two containers of the same pod.
 - **Propagation latency is bounded by kubelet's ConfigMap resync period**
-  (on the order of a minute), not instant. If sub-second propagation is
-  ever needed, the documented escalation path (not built) is a second mode
-  of this same operator running as an in-pod sidecar that watches the
-  ConfigMap directly via the API server and writes into a pod-local
-  `emptyDir` - still no shared writable storage between replicas, since
-  each pod's `emptyDir` is local to that pod.
+  (on the order of a minute) plus the sync sidecar's own poll interval on
+  top - not instant. If sub-second propagation is ever needed, the
+  escalation path (not built) is having the sidecar watch the ConfigMap
+  directly via the API server (informer/watch) instead of polling a
+  kubelet-synced volume mount.
 - **ConfigMap size ceiling.** Kubernetes ConfigMaps are capped near 1MiB in
   etcd. At roughly 1-2KB per RSA-2048 PEM entry, that's on the order of a
   few hundred to ~1000 minions per master release before the ConfigMap

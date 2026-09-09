@@ -84,29 +84,108 @@ spec:
               mountPath: /var/cache/salt/master/jobs
             {{- end }}
             {{- if .Values.agent.trustedMinions.enabled }}
-            # Read-only: this becomes the ONLY way minions get accepted once
-            # enabled - salt-key-operator (see ../../salt-key-operator) owns
-            # this ConfigMap's data out-of-band, one file per trusted minion
-            # ID. Because the mount is read-only, `salt-key -a` no longer
-            # works against this master once this is enabled - it would need
-            # to write into this same directory. That's intentional: mixing
-            # operator-managed and manually-accepted keys across an
-            # active-active master tier would mean different replicas
-            # disagreeing on who's trusted, exactly the gap this exists to
-            # close. minions_pre/ (pending) is unaffected and stays
-            # writable - only minions/ (accepted) is replaced.
-            - name: trusted-minions
+            # NOT the ConfigMap directly (see the trusted-minions-sync
+            # sidecar below for why) - emptyDirs kept in sync with it. This
+            # becomes the ONLY way minions get accepted once enabled:
+            # `salt-key -a` no longer works against this master (Salt
+            # itself only ever reads what the sidecar copies into
+            # minions/). minions_pre/minions_rejected are shared with the
+            # sidecar too (not master.pem/master.pub, which stay off any
+            # shared volume) so it can clean up a minion's own pending/
+            # rejected entry once accepted - otherwise Salt's key-listing
+            # can report the stale pending/rejected state instead of
+            # accepted for the same ID (confirmed by direct testing).
+            - name: trusted-minions-live
               mountPath: /etc/salt/pki/master/minions
-              readOnly: true
+            - name: trusted-minions-pre
+              mountPath: /etc/salt/pki/master/minions_pre
+            - name: trusted-minions-rejected
+              mountPath: /etc/salt/pki/master/minions_rejected
             {{- end }}
           {{- end }}
           securityContext:
             {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
+        {{- if .Values.agent.trustedMinions.enabled }}
+        - name: trusted-minions-sync
+          # Reuses the master image itself (has cp/sh) rather than pulling
+          # something else in - this sidecar's only job is copying
+          # salt-key-operator's ConfigMap into a real writable directory.
+          #
+          # WHY THIS SIDECAR EXISTS (do not "simplify" by mounting the
+          # ConfigMap directly onto /etc/salt/pki/master/minions instead):
+          # Kubernetes ConfigMap volumes always mount files as symlinks
+          # (the atomic ..data indirection scheme) - there is no way to
+          # get a plain regular file out of a ConfigMap volume mount.
+          # Salt 3008's localfs_key cache driver
+          # (salt/cache/localfs_key.py) explicitly rejects symlinks in
+          # every read path (fetch/list_/list_all/contains all check
+          # `keyfile.is_file() and not keyfile.is_symlink()`) as a PKI-
+          # tampering hardening measure added in 3008.0 - a minion whose
+          # key exists ONLY as a ConfigMap-mounted symlink is invisible to
+          # Salt and gets rejected, confirmed by direct testing against a
+          # real cluster. `cp` dereferences a symlink source by default,
+          # producing a genuine regular file at the destination, which is
+          # what actually makes this work.
+          image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -u
+              while true; do
+                for f in /var/run/salt-key-operator/trusted-minions/*; do
+                  [ -e "$f" ] || continue
+                  b="$(basename "$f")"
+                  cp -f "$f" "/etc/salt/pki/master/minions/$b"
+                  # Mirror salt-key -a's actual move semantics: an accepted
+                  # key must not also linger as pending/rejected, or Salt's
+                  # own key-listing (accepted, then pending, then rejected,
+                  # later entries overwriting earlier ones for the same ID)
+                  # reports the stale pending/rejected state instead -
+                  # confirmed by direct testing (a minion that auth'd
+                  # before its key was accepted leaves exactly this kind of
+                  # leftover in minions_pre).
+                  rm -f "/etc/salt/pki/master/minions_pre/$b" "/etc/salt/pki/master/minions_rejected/$b"
+                done
+                for f in /etc/salt/pki/master/minions/*; do
+                  [ -e "$f" ] || continue
+                  b="$(basename "$f")"
+                  [ -e "/var/run/salt-key-operator/trusted-minions/$b" ] || rm -f "$f"
+                done
+                sleep {{ .Values.agent.trustedMinions.syncIntervalSeconds }}
+              done
+          volumeMounts:
+            - name: trusted-minions-src
+              mountPath: /var/run/salt-key-operator/trusted-minions
+              readOnly: true
+            - name: trusted-minions-live
+              mountPath: /etc/salt/pki/master/minions
+            - name: trusted-minions-pre
+              mountPath: /etc/salt/pki/master/minions_pre
+            - name: trusted-minions-rejected
+              mountPath: /etc/salt/pki/master/minions_rejected
+          securityContext:
+            {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+        {{- end }}
       {{- if .Values.agent.trustedMinions.enabled }}
       volumes:
-        - name: trusted-minions
+        - name: trusted-minions-src
           configMap:
             name: {{ .Values.agent.trustedMinions.configMapName }}
+        - name: trusted-minions-live
+          emptyDir: {}
+        - name: trusted-minions-pre
+          emptyDir: {}
+        - name: trusted-minions-rejected
+          emptyDir: {}
       {{- end }}
   {{- if .Values.agent.jobCache.persistence.enabled }}
   volumeClaimTemplates:

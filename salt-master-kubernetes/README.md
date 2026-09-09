@@ -104,5 +104,9 @@ Two ways to accept a minion's key, mutually exclusive per release:
   apply a `SaltMinionKey` custom resource instead - it keeps every replica
   consistent automatically. See that component's own README for the full
   flow. Once enabled, `salt-key -a` no longer works against this master at
-  all (`/etc/salt/pki/master/minions` becomes a read-only mount owned by
-  the operator) - this is intentional, not a bug.
+  all - a `trusted-minions-sync` sidecar continuously copies the
+  operator's ConfigMap into the directory Salt reads, and that's the only
+  path in. (Not a direct ConfigMap volume mount: Kubernetes always mounts
+  ConfigMaps as symlinks, and Salt 3008 explicitly rejects symlinks in its
+  key store - confirmed by live testing, see the chart's own
+  `CHANGELOG.md`.) This is intentional, not a bug.

@@ -33,10 +33,16 @@ of the image version it happens to default to — check here, not the tag number
 - New `agent.trustedMinions.*` (default `enabled: false`): delegates minion acceptance
   to `salt-key-operator` entirely. New `templates/configmap.yaml` creates a ConfigMap
   (rendered with no `data:` key, so `helm upgrade` never stomps the operator's
-  out-of-band writes to it) that the operator populates one entry per trusted minion;
-  the StatefulSet mounts it **read-only** at `/etc/salt/pki/master/minions` when enabled.
-  Once enabled, `salt-key -a` no longer works against this master at all (the directory
-  it writes into is read-only) - that's intentional, see `values.yaml`'s comment.
+  out-of-band writes to it) that a new `trusted-minions-sync` sidecar container
+  continuously copies into the writable directory Salt actually reads. **Not** a
+  direct ConfigMap volume mount onto `/etc/salt/pki/master/minions` - confirmed by
+  live testing that Kubernetes always mounts ConfigMap volumes as symlinks, and
+  Salt 3008's `localfs_key` cache driver explicitly rejects symlinks in every key
+  read path as a PKI-tampering hardening measure. `cp` dereferences a symlink
+  source by default, which is what makes the sidecar's copy actually work. Once
+  enabled, `salt-key -a` no longer works against this master at all (Salt only
+  ever reads what the sidecar copies in) - that's intentional, see `values.yaml`'s
+  comment.
 
 ## salt-master-kubernetes-chart/v0.1.0
 - Default image: `salt-master:1.0.0` (`appVersion` in `Chart.yaml`) — see
