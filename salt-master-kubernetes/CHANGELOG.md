@@ -11,9 +11,19 @@ of the image version it happens to default to — check here, not the tag number
   into StatefulSet manifests of the same name in place.
 - New `templates/service-headless.yaml` (`clusterIP: None`) for in-cluster per-ordinal DNS,
   and optional `templates/service-per-ordinal.yaml` (`service.perOrdinal.enabled`) for
-  external per-ordinal NodePort access. The existing flat `templates/service.yaml` is
-  unchanged in shape but its `clusterIP`/type semantics can still conflict with a prior
-  release's Service object on `helm upgrade` - reinstall rather than upgrade regardless.
+  external per-ordinal access. The existing flat `templates/service.yaml`'s default
+  `service.type` changed `NodePort` → `ClusterIP` (standard practice - nothing exposed
+  outside the cluster unless explicitly configured); its `clusterIP`/type semantics can
+  still conflict with a prior release's Service object on `helm upgrade` regardless -
+  reinstall rather than upgrade.
+- New `service.gateway.*` / `service.perOrdinal.gateway.*` (default `enabled: false`):
+  generates Gateway API `TCPRoute` objects (raw TCP passthrough, e.g. via Envoy Gateway)
+  for external access instead of NodePort/LoadBalancer - a standard Kubernetes `Ingress`
+  cannot do this at all (HTTP(S)-only; Salt's ports are raw ZeroMQ). New
+  `templates/gateway-tcproute.yaml`; per-ordinal TCPRoutes folded into
+  `templates/service-per-ordinal.yaml`. `service.perOrdinal.type` also changed from
+  hardcoded `NodePort` to a configurable value, default `ClusterIP` (works as a TCPRoute
+  backend without needing NodePort at all).
 - `agent.persistence.*` (PKI persistence) removed entirely - `agent.masterKeySecretName`
   is now the only supported way to give the master a stable identity, and is **required**
   when `agent.replicas > 1` (the chart fails fast otherwise). Replaced by

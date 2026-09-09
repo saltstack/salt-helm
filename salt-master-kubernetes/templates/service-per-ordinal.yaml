@@ -1,13 +1,15 @@
-# One Service per StatefulSet replica ordinal, each with its own NodePort -
-# needed for EXTERNAL (non-cluster) minions to do genuine multi-master
-# fan-out: the headless Service above only resolves inside the cluster, but
-# an external minion's `master:` list still needs one distinct, stable
-# address per master replica (see docker/salt-master/README.md and
+# One Service per StatefulSet replica ordinal, each individually
+# addressable - needed for EXTERNAL (non-cluster) minions to do genuine
+# multi-master fan-out: the headless Service above only resolves inside
+# the cluster, but an external minion's `master:` list still needs one
+# distinct, stable address per master replica (see
 # https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html).
 # Disabled by default - only needed when minions run outside normal pod
-# scheduling, this chart's other documented use case (service.type=NodePort
-# above serves that same audience for a *single* master today).
+# scheduling; in-cluster minions should use the headless Service instead.
 {{- if .Values.service.perOrdinal.enabled }}
+{{- if and .Values.service.perOrdinal.gateway.enabled (not .Values.service.perOrdinal.gateway.gatewayName) }}
+{{- fail "service.perOrdinal.gateway.gatewayName is required when service.perOrdinal.gateway.enabled is true." }}
+{{- end }}
 {{- range $i := until (int .Values.agent.replicas) }}
 apiVersion: v1
 kind: Service
@@ -19,7 +21,7 @@ metadata:
     app.kubernetes.io/managed-by: {{ $.Release.Service }}
     helm.sh/chart: {{ $.Chart.Name }}-{{ $.Chart.Version }}
 spec:
-  type: NodePort
+  type: {{ $.Values.service.perOrdinal.type }}
   # StatefulSet pods are automatically labeled with their own ordinal pod
   # name - select on it directly so this Service only ever routes to this
   # one specific replica, never any other.
@@ -30,11 +32,59 @@ spec:
     - name: publish
       port: 4505
       targetPort: publish
+      {{- if eq $.Values.service.perOrdinal.type "NodePort" }}
       nodePort: {{ add $.Values.service.perOrdinal.basePublishPort $i }}
+      {{- end }}
     - name: ret
       port: 4506
       targetPort: ret
+      {{- if eq $.Values.service.perOrdinal.type "NodePort" }}
       nodePort: {{ add $.Values.service.perOrdinal.baseRetPort $i }}
+      {{- end }}
+{{- if $.Values.service.perOrdinal.gateway.enabled }}
+---
+# Raw TCP passthrough via a Gateway API TCPRoute (e.g. Envoy Gateway) for
+# this one replica - see service.perOrdinal.gateway's own values.yaml
+# comment. Expects a Gateway with listeners named
+# <sectionNamePrefix>-publish-{{ $i }} / -ret-{{ $i }} already defined.
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: salt-master-kubernetes-{{ $i }}-publish
+  namespace: {{ $.Values.namespace }}
+  labels:
+    app.kubernetes.io/name: salt-master-kubernetes
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    helm.sh/chart: {{ $.Chart.Name }}-{{ $.Chart.Version }}
+spec:
+  parentRefs:
+    - name: {{ $.Values.service.perOrdinal.gateway.gatewayName }}
+      namespace: {{ $.Values.service.perOrdinal.gateway.gatewayNamespace | default $.Values.namespace }}
+      sectionName: {{ $.Values.service.perOrdinal.gateway.sectionNamePrefix }}-publish-{{ $i }}
+  rules:
+    - backendRefs:
+        - name: salt-master-kubernetes-{{ $i }}
+          port: 4505
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: salt-master-kubernetes-{{ $i }}-ret
+  namespace: {{ $.Values.namespace }}
+  labels:
+    app.kubernetes.io/name: salt-master-kubernetes
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    helm.sh/chart: {{ $.Chart.Name }}-{{ $.Chart.Version }}
+spec:
+  parentRefs:
+    - name: {{ $.Values.service.perOrdinal.gateway.gatewayName }}
+      namespace: {{ $.Values.service.perOrdinal.gateway.gatewayNamespace | default $.Values.namespace }}
+      sectionName: {{ $.Values.service.perOrdinal.gateway.sectionNamePrefix }}-ret-{{ $i }}
+  rules:
+    - backendRefs:
+        - name: salt-master-kubernetes-{{ $i }}
+          port: 4506
+{{- end }}
 ---
 {{- end }}
 {{- end }}

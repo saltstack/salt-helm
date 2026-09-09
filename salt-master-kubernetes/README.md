@@ -63,9 +63,35 @@ The following table lists the most commonly overridden values. See
 | `agent.jobCache.persistence.enabled` | Per-replica PVC (via `volumeClaimTemplates`) for the master's job/event cache. Decoupled from identity - PKI is never persisted, only pre-seeded. | `true` |
 | `agent.trustedMinions.enabled` | Delegate minion acceptance to `salt-key-operator` (../salt-key-operator) instead of `salt-key -a`. See "Minion acceptance" below. | `false` |
 | `agent.nodeSelector` | Pins every replica to a node. | `{}` |
-| `service.type` | `NodePort`, `ClusterIP`, or `LoadBalancer` for the flat (non-per-ordinal) Service. `NodePort` is required when minions connect from outside the cluster's pod network. | `NodePort` |
-| `service.nodePorts.publish` / `service.nodePorts.ret` | NodePort forwarding to `4505`/`4506` on the flat Service. Only used when `service.type=NodePort`. | `30505` / `30506` |
-| `service.perOrdinal.enabled` | One NodePort Service per replica ordinal - needed for **external** minions to hold independent connections to every replica (see "Active-active" below). | `false` |
+| `service.type` | `ClusterIP`, `NodePort`, or `LoadBalancer` for the flat (non-per-ordinal) Service. `ClusterIP` (in-cluster only) by default - see "External access" below to actually reach the master from outside the cluster. | `ClusterIP` |
+| `service.gateway.enabled` | Expose the flat Service via a Gateway API `TCPRoute` (e.g. Envoy Gateway) instead of/alongside NodePort. See "External access" below. | `false` |
+| `service.perOrdinal.enabled` | One Service per replica ordinal - needed for **external** minions to hold independent connections to every replica (see "Active-active" below). | `false` |
+| `service.perOrdinal.type` | `ClusterIP`, `NodePort`, or `LoadBalancer` for each per-ordinal Service. | `ClusterIP` |
+
+## External access
+
+Everything defaults to `ClusterIP` - nothing is reachable from outside the
+cluster unless you explicitly opt into one of these (standard Kubernetes
+Ingress cannot do this at all: Ingress is HTTP(S)-only, and Salt's
+`4505`/`4506` carry raw ZeroMQ traffic, not HTTP):
+
+- **`service.gateway.enabled=true`** (recommended if you have a Gateway
+  API-compatible controller, e.g. Envoy Gateway): generates two `TCPRoute`
+  objects (`gateway.networking.k8s.io`) for raw TCP passthrough, attaching
+  to a `Gateway` your platform team manages separately. Requires
+  `service.gateway.gatewayName` and two pre-existing TCP listeners on that
+  Gateway (`service.gateway.publishSectionName`/`retSectionName`).
+- **`service.type=NodePort`**: exposes the port directly on every node's
+  own IP. Simple, no extra controller needed, but not standard practice
+  for a production cluster (opens a host-level port on every node
+  regardless of where the pod is actually scheduled) - prefer the Gateway
+  option above if available.
+- **`service.type=LoadBalancer`**: standard cloud LB provisioning, if your
+  cluster supports it.
+
+`service.perOrdinal.*` has the equivalent three options
+(`gateway.enabled`, `type=NodePort`, `type=LoadBalancer`) for active-active
+external access - see below.
 
 ## Active-active (multiple replicas)
 
@@ -79,8 +105,9 @@ replica's address, not a single Service:
 - **In-cluster minions**: `salt-master-kubernetes-<N>.salt-master-kubernetes-headless.<namespace>.svc.cluster.local`
   for `N` in `0..agent.replicas-1` (the headless Service is always created).
 - **External minions**: set `service.perOrdinal.enabled=true` for one
-  NodePort Service per replica, then use any node's IP with that replica's
-  NodePort (`service.perOrdinal.basePublishPort`/`baseRetPort` + ordinal).
+  Service per replica (see "External access" above for `type`/`gateway`
+  choices), then use either that replica's NodePort/LoadBalancer address
+  or its Gateway TCPRoute address.
 
 All replicas must share the identical keypair (`agent.masterKeySecretName`)
 - the chart fails to render otherwise. There is no cross-replica job/event

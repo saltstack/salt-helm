@@ -12,6 +12,20 @@ agent:
     repository: salt-master
     tag: "3007.1"
     pullPolicy: IfNotPresent
+
+  # 1 (default) = simplest possible setup: single master, single Service
+  # address, no ambiguity about which replica serves a given minion.
+  #
+  # > 1 = active-active, but ONLY genuinely so for clients that address
+  # each replica individually - the headless Service's per-ordinal DNS
+  # names in-cluster (always created, no config needed), or
+  # service.perOrdinal for external minions. A single flat Service address
+  # (service.type/service.gateway below) in front of >1 replica still only
+  # gives connection-level load-balancing + auto-failover, never "any
+  # replica can dispatch to any minion" - that's inherent to Salt's
+  # per-process pub/sub, not something any Service type or gateway can
+  # change. Also requires agent.masterKeySecretName (the chart fails fast
+  # otherwise) - every replica must share the identical keypair.
   replicas: 1
 
   # No numeric runAsUser/runAsGroup/fsGroup here on purpose - the image runs
@@ -141,36 +155,73 @@ serviceAccount:
   annotations: {}
 
 service:
-  # NodePort, not ClusterIP: this project's test-lab minions run outside
-  # normal pod scheduling (pushed directly into each node's containerd
-  # store -- see scripts/push-image-to-nodes.sh), so they reach the master
-  # via a node IP rather than in-cluster Service DNS. With replicas > 1
-  # this Service load-balances per-connection across all of them - fine for
-  # simple single-address access, but NOT sufficient for genuine
-  # multi-master fan-out (see perOrdinal below and
-  # templates/service-headless.yaml for the in-cluster equivalent).
-  type: NodePort
+  # ClusterIP by default - standard practice: nothing is reachable from
+  # outside the cluster unless you explicitly opt into one of the
+  # mechanisms below. A single Service address only gives genuine
+  # multi-master fan-out at replicas: 1 - with replicas > 1 it still
+  # load-balances per-connection across all of them (auto-failover if one
+  # dies, but NOT "any replica can dispatch to any minion"; see
+  # agent.replicas' own comment above). For real fan-out with replicas > 1,
+  # in-cluster minions use the always-created headless Service's
+  # per-ordinal DNS names directly (templates/service-headless.yaml, no
+  # config needed here) - external minions need perOrdinal below.
+  type: ClusterIP
+
+  # Only used when type=NodePort - exposes the port directly on every
+  # node's own IP. Not standard practice for a production cluster (opens a
+  # host-level port on every node regardless of where the pod is actually
+  # scheduled) - prefer service.gateway below if you have a Gateway
+  # API-compatible controller (e.g. Envoy Gateway) available.
   nodePorts:
     publish: 30505
     ret: 30506
 
+  # Exposes this same single Service through a Gateway API TCPRoute
+  # (gateway.networking.k8s.io) instead - e.g. Envoy Gateway, which
+  # supports raw TCP passthrough. A standard Kubernetes Ingress cannot do
+  # this at all: Ingress is HTTP(S)-only, and Salt's 4505/4506 carry raw
+  # ZeroMQ traffic, not HTTP. This does NOT create a Gateway - that's a
+  # cluster-level object your platform team manages separately, with two
+  # TCP listeners already defined (one per port) for these TCPRoutes to
+  # attach to by name.
+  gateway:
+    enabled: false
+    gatewayName: ""
+    # Defaults to this release's own namespace when empty.
+    gatewayNamespace: ""
+    publishSectionName: salt-publish
+    retSectionName: salt-ret
+
   # One Service per StatefulSet replica ordinal (salt-master-kubernetes-0,
-  # -1, -2, ...), each with its own NodePort - required for EXTERNAL
-  # (non-cluster) minions to hold independent connections to every master
-  # replica simultaneously (Salt's genuine multi-master mode, not just
-  # failover - see
+  # -1, -2, ...) - required for EXTERNAL (non-cluster) minions to hold
+  # independent connections to every master replica simultaneously (Salt's
+  # genuine multi-master mode, not just failover - see
   # https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html).
   # In-cluster minions should use the headless Service's per-ordinal DNS
   # names instead and can leave this disabled.
   perOrdinal:
     enabled: false
-    # NodePort ranges, one pair per ordinal starting here (ordinal 0 gets
-    # basePublishPort/baseRetPort, ordinal 1 gets +1, etc.) - kept distinct
-    # from nodePorts above so both can be enabled at once without clashing.
-    # The two bases must stay at least (max replica count) apart, or
-    # ordinal N's publish port collides with ordinal (N-1)'s ret port (e.g.
-    # base 31505/31506 with 2+ replicas: ordinal 1's publish=31506 clashes
-    # with ordinal 0's ret=31506) - the gap of 100 below comfortably covers
-    # any realistic replica count.
+    # ClusterIP by default too, same reasoning as the flat Service above -
+    # this still works as a gateway.enabled TCPRoute backend (see below)
+    # without needing NodePort at all. Override to NodePort or
+    # LoadBalancer for direct external exposure with no gateway involved.
+    type: ClusterIP
+    # Only used when type=NodePort. Ranges, one pair per ordinal starting
+    # here (ordinal 0 gets basePublishPort/baseRetPort, ordinal 1 gets +1,
+    # etc.) - kept distinct from nodePorts above so both can be enabled at
+    # once without clashing. The two bases must stay at least (max replica
+    # count) apart, or ordinal N's publish port collides with ordinal
+    # (N-1)'s ret port (e.g. base 31505/31506 with 2+ replicas: ordinal 1's
+    # publish=31506 clashes with ordinal 0's ret=31506) - the gap of 100
+    # below comfortably covers any realistic replica count.
     basePublishPort: 31505
     baseRetPort: 31605
+
+    # Same idea as service.gateway above, one TCPRoute pair per replica
+    # ordinal. Expects the Gateway to already have two listeners per
+    # ordinal, named <sectionNamePrefix>-publish-<N> / -ret-<N>.
+    gateway:
+      enabled: false
+      gatewayName: ""
+      gatewayNamespace: ""
+      sectionNamePrefix: salt-master
