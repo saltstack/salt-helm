@@ -1,0 +1,59 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: salt-key-operator
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - salt.saltstack.io
+  resources:
+  - saltminionkeys
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - salt.saltstack.io
+  resources:
+  - saltminionkeys/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - salt.saltstack.io
+  resources:
+  - saltminionkeys/status
+  verbs:
+  - get
+  - patch
+  - update

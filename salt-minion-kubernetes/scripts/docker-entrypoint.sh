@@ -7,6 +7,20 @@ RUNTIME_CONFIG="${CONFIG_DIR}/20-runtime.conf"
 
 mkdir -p "$CONFIG_DIR" /etc/salt/pki/minion /var/cache/salt/minion/.socks /var/log/salt
 
+# Pre-seed the minion's own RSA keypair when supplied - same pattern as
+# salt-minion-vcf/scripts/docker-entrypoint.sh. Only applied when
+# minion.pem doesn't already exist, so a restarted/rescheduled container
+# (persistent PKI volume) keeps its established identity rather than
+# re-seeding on every start.
+if [ ! -s /etc/salt/pki/minion/minion.pem ] \
+    && [ -n "${SALT_MINION_PRIVATE_KEY_B64:-}" ] && [ -n "${SALT_MINION_PUBLIC_KEY_B64:-}" ]; then
+  echo "${SALT_MINION_PRIVATE_KEY_B64}" | base64 -d > /etc/salt/pki/minion/minion.pem
+  chmod 0400 /etc/salt/pki/minion/minion.pem
+  echo "${SALT_MINION_PUBLIC_KEY_B64}" | base64 -d > /etc/salt/pki/minion/minion.pub
+  chmod 0644 /etc/salt/pki/minion/minion.pub
+  echo "Pre-seeded minion keypair (already registered as trusted)"
+fi
+
 # Kubernetes Deployment pods get a random pod name (no stable identity like a
 # StatefulSet's), so fall back to the container hostname when no explicit ID
 # is set.
@@ -29,8 +43,27 @@ if [ -n "${SALT_MASTER:-}" ]; then
     *[!0-9]*|'') echo >&2 "ERROR: SALT_PUBLISH_PORT must be numeric"; exit 64 ;;
   esac
 
-  cat > "$MASTER_CONFIG" <<EOF
-master: ${SALT_MASTER}
+  # A comma-separated SALT_MASTER (e.g. "master-0,master-1,master-2")
+  # renders as a YAML list instead of a scalar - Salt's native multi-master
+  # mode (https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html):
+  # one independent, simultaneous connection per address, not failover.
+  case "${SALT_MASTER}" in
+    *,*)
+      echo "master:" > "$MASTER_CONFIG"
+      old_ifs=$IFS
+      IFS=','
+      for m in $SALT_MASTER; do
+        IFS=$old_ifs
+        echo "  - ${m}" >> "$MASTER_CONFIG"
+      done
+      IFS=$old_ifs
+      ;;
+    *)
+      echo "master: ${SALT_MASTER}" > "$MASTER_CONFIG"
+      ;;
+  esac
+
+  cat >> "$MASTER_CONFIG" <<EOF
 master_port: ${SALT_MASTER_PORT}
 publish_port: ${SALT_PUBLISH_PORT}
 master_tries: -1

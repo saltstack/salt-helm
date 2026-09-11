@@ -49,8 +49,27 @@ if [ -n "${SALT_MASTER:-}" ]; then
     *[!0-9]*|'') echo >&2 "ERROR: SALT_PUBLISH_PORT must be numeric"; exit 64 ;;
   esac
 
-  cat > "$MASTER_CONFIG" <<EOF
-master: ${SALT_MASTER}
+  # A comma-separated SALT_MASTER (e.g. "master-0,master-1,master-2")
+  # renders as a YAML list instead of a scalar - Salt's native multi-master
+  # mode (https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html):
+  # one independent, simultaneous connection per address, not failover.
+  case "${SALT_MASTER}" in
+    *,*)
+      echo "master:" > "$MASTER_CONFIG"
+      old_ifs=$IFS
+      IFS=','
+      for m in $SALT_MASTER; do
+        IFS=$old_ifs
+        echo "  - ${m}" >> "$MASTER_CONFIG"
+      done
+      IFS=$old_ifs
+      ;;
+    *)
+      echo "master: ${SALT_MASTER}" > "$MASTER_CONFIG"
+      ;;
+  esac
+
+  cat >> "$MASTER_CONFIG" <<EOF
 master_port: ${SALT_MASTER_PORT}
 publish_port: ${SALT_PUBLISH_PORT}
 master_tries: -1

@@ -2,6 +2,9 @@
 {{- if and .Values.salt.minionId (gt (int .Values.workload.replicas) 1) }}
 {{- fail "salt.minionId cannot be shared by multiple StatefulSet replicas. Leave it empty to use stable Pod names." }}
 {{- end }}
+{{- if and (not .Values.salt.minionKeySecretName) (not .Values.salt.allowSelfGeneratedKey) }}
+{{- fail "salt.minionKeySecretName is required (or set salt.allowSelfGeneratedKey=true to explicitly opt out) - without a pre-seeded keypair, the minion generates its own on every start with no persistent volume to survive a restart (persistence.enabled defaults to false), and its public key was never registered as trusted anywhere." }}
+{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

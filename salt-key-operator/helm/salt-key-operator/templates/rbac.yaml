@@ -1,0 +1,108 @@
+# Rules below are generated from kubebuilder RBAC markers in the operator's
+# own Go source (cmd/main.go, internal/controller/saltminionkey_controller.go)
+# via `controller-gen rbac:roleName=salt-key-operator paths="./..." ...` -
+# see config/rbac/role.yaml in this component's own directory for the
+# canonical generated output. Helm has no native way to pull that file in at
+# template time (it lives outside this chart's own directory), so the rule
+# list below is copied by hand whenever the markers change - CI's
+# `helm template`/`helm lint` step will not catch a drifted copy, so treat
+# updating this file as part of any RBAC-marker change, not optional.
+#
+# Namespaced Role/RoleBinding when watchNamespace is set (the default,
+# "salt-master") - the smallest footprint this operator can run with, since
+# it only ever touches objects in that one namespace. Falls back to a
+# cluster-wide ClusterRole/ClusterRoleBinding only when watchNamespace is
+# explicitly cleared for a genuine multi-tenant deployment.
+{{- if .Values.watchNamespace }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: salt-key-operator
+  namespace: {{ .Values.watchNamespace }}
+  labels:
+    app.kubernetes.io/name: salt-key-operator
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "get", "list", "patch", "update", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["salt.saltstack.io"]
+    resources: ["saltminionkeys"]
+    verbs: ["get", "list", "patch", "update", "watch"]
+  - apiGroups: ["salt.saltstack.io"]
+    resources: ["saltminionkeys/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["salt.saltstack.io"]
+    resources: ["saltminionkeys/status"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: salt-key-operator
+  namespace: {{ .Values.watchNamespace }}
+  labels:
+    app.kubernetes.io/name: salt-key-operator
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: salt-key-operator
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Release.Namespace }}
+{{- else }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: salt-key-operator
+  labels:
+    app.kubernetes.io/name: salt-key-operator
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "get", "list", "patch", "update", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["salt.saltstack.io"]
+    resources: ["saltminionkeys"]
+    verbs: ["get", "list", "patch", "update", "watch"]
+  - apiGroups: ["salt.saltstack.io"]
+    resources: ["saltminionkeys/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["salt.saltstack.io"]
+    resources: ["saltminionkeys/status"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: salt-key-operator
+  labels:
+    app.kubernetes.io/name: salt-key-operator
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: salt-key-operator
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

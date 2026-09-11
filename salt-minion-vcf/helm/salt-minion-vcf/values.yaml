@@ -11,6 +11,17 @@ workload:
   replicas: 1
 
 salt:
+  # A single address, or a list of addresses for Salt's own native
+  # multi-master mode (https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html)
+  # - the minion holds an independent, simultaneous connection to EVERY
+  # address in the list (not failover - genuine active-active fan-out).
+  # Required when pointing at an active-active salt-master-kubernetes
+  # release (agent.replicas > 1 there): use that chart's per-ordinal
+  # addresses, e.g.
+  #   master:
+  #     - salt-master-kubernetes-0.salt-master-kubernetes-headless.salt-master.svc.cluster.local
+  #     - salt-master-kubernetes-1.salt-master-kubernetes-headless.salt-master.svc.cluster.local
+  #     - salt-master-kubernetes-2.salt-master-kubernetes-headless.salt-master.svc.cluster.local
   master: salt-master.example.com
   masterPort: 4506
   publishPort: 4505
@@ -32,14 +43,24 @@ salt:
   # Name of an EXISTING Kubernetes Secret (created out-of-band, e.g. by
   # vcf-ops-onboard.py, never via Helm values) with keys 'private-key-b64'
   # and 'public-key-b64' - a base64-encoded PEM RSA keypair for the minion
-  # itself. Required by the trust-then-start flow this image now expects:
-  # the minion's public key must already be registered as trusted with VCF
-  # Operations *before* the minion starts, so the minion must be handed that
-  # exact keypair rather than generating its own. Leave empty to fall back
-  # to the minion generating its own keypair on first start (legacy
-  # behavior - incompatible with pre-registered trust, since VCF Operations
-  # would not know that self-generated key).
+  # itself. REQUIRED for a StatefulSet workload (the chart fails fast
+  # otherwise - see allowSelfGeneratedKey below for the escape hatch): the
+  # minion's public key must already be registered as trusted (VCF
+  # Operations, or a SaltMinionKey - see ../../salt-key-operator) *before*
+  # the minion starts, so the minion must be handed that exact keypair
+  # rather than generating its own, which the trust store would never have
+  # been told about. With persistence.enabled=false (the default now - see
+  # below), a self-generated key also wouldn't even survive a pod restart.
   minionKeySecretName: ""
+
+  # Explicit opt-out of the minionKeySecretName requirement above, for
+  # workload.kind=StatefulSet - falls back to the minion generating its own
+  # keypair on first start. Only makes sense combined with
+  # persistence.enabled=true (otherwise a fresh keypair, and a fresh
+  # unaccepted minion, appears on every pod restart). Named explicitly
+  # rather than just leaving minionKeySecretName empty, so choosing this
+  # legacy behavior is a deliberate, visible decision in your values file.
+  allowSelfGeneratedKey: false
 
   masterTries: -1
   retryDns: 30
@@ -87,8 +108,14 @@ vault:
   # key 'token' (matching authMethod). Leave empty to disable.
   secretName: ""
 
+# Disabled by default: once minionKeySecretName is set (the standard path
+# now), the minion's identity is supplied externally on every start, so
+# there's nothing generated-then-persisted left to protect - the minion is
+# fully stateless. Set enabled: true only alongside
+# salt.allowSelfGeneratedKey: true, to give a self-generated keypair
+# somewhere to survive across pod restarts.
 persistence:
-  enabled: true
+  enabled: false
   storageClass: ""
   accessModes:
     - ReadWriteOnce

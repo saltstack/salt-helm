@@ -2,6 +2,9 @@
 {{- if and .Values.agent.persistence.enabled (eq .Values.agent.persistence.type "hostPath") (not .Values.agent.nodeSelector) }}
 {{- fail "agent.persistence.type=hostPath requires agent.nodeSelector to pin the pod to the node holding the persisted /etc/salt/pki data" }}
 {{- end }}
+{{- if and (not .Values.agent.minion.keySecretName) (not .Values.agent.minion.allowSelfGeneratedKey) }}
+{{- fail "agent.minion.keySecretName is required (or set agent.minion.allowSelfGeneratedKey=true to explicitly opt out) - without a pre-seeded keypair, the minion generates its own on every start with no persistent volume to survive a restart (agent.persistence.enabled defaults to false), and its public key was never registered as trusted anywhere." }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -73,7 +76,26 @@ spec:
           imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
           env:
             - name: SALT_MASTER
+              {{- if kindIs "slice" .Values.agent.saltMasterHost }}
+              # docker-entrypoint.sh renders this as a YAML list (Salt's
+              # native multi-master mode) when it contains a comma - see
+              # https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html
+              value: {{ join "," .Values.agent.saltMasterHost | quote }}
+              {{- else }}
               value: {{ .Values.agent.saltMasterHost | quote }}
+              {{- end }}
+            {{- if .Values.agent.minion.keySecretName }}
+            - name: SALT_MINION_PRIVATE_KEY_B64
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.agent.minion.keySecretName }}
+                  key: private-key-b64
+            - name: SALT_MINION_PUBLIC_KEY_B64
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.agent.minion.keySecretName }}
+                  key: public-key-b64
+            {{- end }}
             - name: SALT_MASTER_PORT
               value: {{ .Values.agent.saltMasterPort | quote }}
             - name: SALT_PUBLISH_PORT

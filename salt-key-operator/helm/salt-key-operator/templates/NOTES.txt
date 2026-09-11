@@ -1,0 +1,41 @@
+salt-key-operator has been installed.
+
+Check the operator is running:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+This does NOT do anything on its own yet - it only reconciles SaltMinionKey
+objects in namespaces where a salt-master-kubernetes release's trusted-
+minions ConfigMap already exists. On the salt-master-kubernetes side,
+install/upgrade that chart with:
+  agent.trustedMinions.enabled=true
+
+{{- if .Values.watchNamespace }}
+
+This operator only watches namespace "{{ .Values.watchNamespace }}"
+(watchNamespace) - make sure that's where your salt-master-kubernetes
+release and SaltMinionKey objects live, or set watchNamespace="" for
+cluster-wide watching instead.
+{{- end }}
+
+To trust a minion (replacing `salt-key -a <minion-id>`), apply a
+SaltMinionKey in the SAME namespace as the target salt-master-kubernetes
+release:
+
+  apiVersion: salt.saltstack.io/v1alpha1
+  kind: SaltMinionKey
+  metadata:
+    name: <minion-id>
+    namespace: <namespace>
+  spec:
+    minionId: <minion-id>
+    publicKey: |
+      -----BEGIN PUBLIC KEY-----
+      ...
+      -----END PUBLIC KEY-----
+
+Then watch it get accepted:
+  kubectl get saltminionkey <minion-id> -n <namespace> -o wide
+
+Propagation to already-running master pods happens via the normal kubelet
+ConfigMap-volume resync (bounded by kubelet's periodic sync, on the order of
+a minute) - no `salt-key -a`, no master pod restart required.
