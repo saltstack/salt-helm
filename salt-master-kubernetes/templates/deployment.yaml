@@ -124,7 +124,7 @@ spec:
           # Salt and gets rejected, confirmed by direct testing against a
           # real cluster. `cp` dereferences a symlink source by default,
           # producing a genuine regular file at the destination, which is
-          # what actually makes this work.
+          # what makes this work.
           image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
           imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
           command:
@@ -135,7 +135,7 @@ spec:
               while true; do
                 for f in /var/run/salt-key-operator/trusted-minions/*; do
                   [ -e "$f" ] || continue
-                  b="$(basename "$f")"
+                  b="$(basename \"$f\")"
                   cp -f "$f" "/etc/salt/pki/master/minions/$b"
                   # Mirror salt-key -a's actual move semantics: an accepted
                   # key must not also linger as pending/rejected, or Salt's
@@ -149,7 +149,7 @@ spec:
                 done
                 for f in /etc/salt/pki/master/minions/*; do
                   [ -e "$f" ] || continue
-                  b="$(basename "$f")"
+                  b="$(basename \"$f\")"
                   [ -e "/var/run/salt-key-operator/trusted-minions/$b" ] || rm -f "$f"
                 done
                 sleep {{ .Values.agent.trustedMinions.syncIntervalSeconds }}
@@ -191,4 +191,3 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "salt-master-kubernetes.fullname" . }}-job-cache
 {{- end }}
-
