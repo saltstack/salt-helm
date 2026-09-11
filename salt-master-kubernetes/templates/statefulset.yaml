@@ -2,7 +2,7 @@
 {{- fail "agent.masterKeySecretName is required when agent.replicas > 1 - without it, every replica generates its own independent keypair, and minions would trust a different master identity depending on which pod they happened to connect to. Pre-seed one shared keypair via an existing Secret." }}
 {{- end }}
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: salt-master-kubernetes
   namespace: {{ .Values.namespace }}
@@ -17,7 +17,6 @@ spec:
   # (salt-master-kubernetes-N.salt-master-kubernetes-headless...) that let a
   # minion's multi-master `master:` list address each replica individually.
   # See templates/service-headless.yaml.
-  serviceName: salt-master-kubernetes-headless
   replicas: {{ .Values.agent.replicas }}
   selector:
     matchLabels:
@@ -175,29 +174,21 @@ spec:
               cpu: 50m
               memory: 32Mi
         {{- end }}
-      {{- if .Values.agent.trustedMinions.enabled }}
-      volumes:
-        - name: trusted-minions-src
-          configMap:
-            name: {{ .Values.agent.trustedMinions.configMapName }}
-        - name: trusted-minions-live
-          emptyDir: {}
-        - name: trusted-minions-pre
-          emptyDir: {}
-        - name: trusted-minions-rejected
-          emptyDir: {}
-      {{- end }}
-  {{- if .Values.agent.jobCache.persistence.enabled }}
-  volumeClaimTemplates:
-    - metadata:
-        name: job-cache
-      spec:
-        accessModes:
-          - {{ .Values.agent.jobCache.persistence.accessMode }}
-        {{- with .Values.agent.jobCache.persistence.storageClassName }}
-        storageClassName: {{ . }}
-        {{- end }}
-        resources:
-          requests:
-            storage: {{ .Values.agent.jobCache.persistence.size }}
-  {{- end }}
+{{- if .Values.agent.trustedMinions.enabled }}
+       volumes:
+         - name: trusted-minions-src
+           configMap:
+             name: {{ .Values.agent.trustedMinions.configMapName }}
+         - name: trusted-minions-live
+           emptyDir: {}
+         - name: trusted-minions-pre
+           emptyDir: {}
+         - name: trusted-minions-rejected
+           emptyDir: {}
+{{- end }}
+{{- if .Values.agent.jobCache.persistence.enabled }}
+        - name: job-cache
+          persistentVolumeClaim:
+            claimName: {{ include "salt-master-kubernetes.fullname" . }}-job-cache
+{{- end }}
+
