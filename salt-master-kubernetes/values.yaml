@@ -184,8 +184,8 @@ service:
   # cluster-level object your platform team manages separately, with two
   # TCP listeners already defined (one per port) for these TCPRoutes to
   # attach to by name.
-  gateway:
-    enabled: true
+gateway:
+      enabled: false
     gatewayName: ""
     # Defaults to this release's own namespace when empty.
     gatewayNamespace: ""
@@ -221,7 +221,7 @@ service:
     # ordinal. Expects the Gateway to already have two listeners per
     # ordinal, named <sectionNamePrefix>-publish-<N> / -ret-<N>.
     gateway:
-      enabled: true
+      enabled: false
       gatewayName: ""
       gatewayNamespace: ""
       sectionNamePrefix: salt-master
