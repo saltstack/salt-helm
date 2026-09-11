@@ -185,12 +185,12 @@ service:
   # TCP listeners already defined (one per port) for these TCPRoutes to
   # attach to by name.
 gateway:
-      enabled: false
-    gatewayName: ""
-    # Defaults to this release's own namespace when empty.
-    gatewayNamespace: ""
-    publishSectionName: salt-publish
-    retSectionName: salt-ret
+  enabled: false
+  gatewayName: ""
+  # Defaults to this release's own namespace when empty.
+  gatewayNamespace: ""
+  publishSectionName: salt-publish
+  retSectionName: salt-ret
 
   # One Service per StatefulSet replica ordinal (salt-master-kubernetes-0,
   # -1, -2, ...) - required for EXTERNAL (non-cluster) minions to hold
