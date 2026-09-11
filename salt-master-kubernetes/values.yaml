@@ -109,7 +109,7 @@ agent:
   # false to keep the traditional salt-key workflow (fine for a single
   # replica; does NOT give consistent acceptance across replicas > 1).
   trustedMinions:
-    enabled: false
+    enabled: true
     # Set false to reference an existing ConfigMap (e.g. created by another
     # tool) instead of having this chart create one.
     createConfigMap: true
@@ -185,7 +185,7 @@ service:
   # TCP listeners already defined (one per port) for these TCPRoutes to
   # attach to by name.
   gateway:
-    enabled: false
+    enabled: true
     gatewayName: ""
     # Defaults to this release's own namespace when empty.
     gatewayNamespace: ""
@@ -200,7 +200,7 @@ service:
   # In-cluster minions should use the headless Service's per-ordinal DNS
   # names instead and can leave this disabled.
   perOrdinal:
-    enabled: false
+    enabled: true
     # ClusterIP by default too, same reasoning as the flat Service above -
     # this still works as a gateway.enabled TCPRoute backend (see below)
     # without needing NodePort at all. Override to NodePort or
@@ -221,7 +221,7 @@ service:
     # ordinal. Expects the Gateway to already have two listeners per
     # ordinal, named <sectionNamePrefix>-publish-<N> / -ret-<N>.
     gateway:
-      enabled: false
+      enabled: true
       gatewayName: ""
       gatewayNamespace: ""
       sectionNamePrefix: salt-master
