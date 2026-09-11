@@ -109,7 +109,7 @@ agent:
   # false to keep the traditional salt-key workflow (fine for a single
   # replica; does NOT give consistent acceptance across replicas > 1).
   trustedMinions:
-    enabled: true
+    enabled: false
     # Set false to reference an existing ConfigMap (e.g. created by another
     # tool) instead of having this chart create one.
     createConfigMap: true
@@ -184,13 +184,13 @@ service:
   # cluster-level object your platform team manages separately, with two
   # TCP listeners already defined (one per port) for these TCPRoutes to
   # attach to by name.
-gateway:
-  enabled: false
-  gatewayName: ""
-  # Defaults to this release's own namespace when empty.
-  gatewayNamespace: ""
-  publishSectionName: salt-publish
-  retSectionName: salt-ret
+  gateway:
+    enabled: false
+    gatewayName: ""
+    # Defaults to this release's own namespace when empty.
+    gatewayNamespace: ""
+    publishSectionName: salt-publish
+    retSectionName: salt-ret
 
   # One Service per StatefulSet replica ordinal (salt-master-kubernetes-0,
   # -1, -2, ...) - required for EXTERNAL (non-cluster) minions to hold
