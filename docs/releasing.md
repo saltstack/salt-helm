@@ -66,7 +66,7 @@ Installing a published chart:
 ```bash
 helm install salt-master-kubernetes \
   oci://ghcr.io/saltstack/salt-helm/charts/salt-master-kubernetes \
-  --version 0.1.0 \
+  --version 1.0.0 \
   -f my-values.yaml
 ```
 

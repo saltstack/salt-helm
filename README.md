@@ -48,7 +48,7 @@ helm install salt-key-operator \
 ```bash
 helm install salt-minion-kubernetes \
   oci://ghcr.io/saltstack/salt-helm/charts/salt-minion-kubernetes \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --set agent.saltMasterHost=salt-master.example.com
 ```
 
@@ -61,7 +61,7 @@ needed there.)
 ```bash
 helm install salt-minion-vcf \
   oci://ghcr.io/saltstack/salt-helm/charts/salt-minion-vcf \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --set image.repository=ghcr.io/saltstack/salt-helm/salt-minion-vcf \
   --set image.tag=0.1.1 \
   --set salt.master=salt-master.example.com
