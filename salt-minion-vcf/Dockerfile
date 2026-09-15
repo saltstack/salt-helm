@@ -47,6 +47,7 @@ RUN set -eu; \
 # release channel rather than being frozen at build time - only Salt's own
 # packages are version-pinned (SALT_VERSION), just below.
 # hadolint ignore=DL3008
+# hadolint ignore=DL3009
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg tini iproute2 dnsutils netcat-openbsd \
     && mkdir -m 755 -p /etc/apt/keyrings \
