@@ -1,3 +1,4 @@
+# hadolint ignore=DL3009
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive

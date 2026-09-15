@@ -1,3 +1,4 @@
+# hadolint ignore=DL3009
 # syntax=docker/dockerfile:1
 #
 # Self-contained Salt minion image for salt-minion-kubernetes: core Salt plus
