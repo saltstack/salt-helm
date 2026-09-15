@@ -41,7 +41,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 # salt.sources is vendored from the salt-install-guide release rather than
 # curled at build time - see salt-minion-vcf/docker/apt/salt.sources for why
 # (intermittent cert-chain failures on Linux/OpenSSL clients).
-COPY docker/apt/salt.sources /etc/apt/sources.list.d/salt.sources
+RUN curl -fsSL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
 
 RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
@@ -56,12 +56,8 @@ RUN set -eu; \
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg tini iproute2 dnsutils netcat-openbsd \
-    && mkdir -p /etc/apt/keyrings \
-    && chmod 0755 /etc/apt/keyrings \
-    && curl --retry 5 --retry-all-errors --retry-delay 2 -fsSL \
-       -o /tmp/salt-archive-keyring.asc "${SALT_GPG_KEY_URL}" \
-    && gpg --dearmor -o /etc/apt/keyrings/salt-archive-keyring.pgp /tmp/salt-archive-keyring.asc \
-    && rm -f /tmp/salt-archive-keyring.asc \
+    && mkdir -m 755 -p /etc/apt/keyrings \
+    && curl -fsSL https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public | gpg --dearmor -o /etc/apt/keyrings/salt-archive-keyring.pgp \
     && printf 'Package: salt-*\nPin: version 3008.*\nPin-Priority: 1001\n' \
        > /etc/apt/preferences.d/salt-pin-1001 \
     && apt-get update \
