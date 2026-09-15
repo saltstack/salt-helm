@@ -31,8 +31,8 @@ ARG PIP_ONLY_BINARY=""
 # empty to use the public defaults (Ubuntu's own mirrors, Broadcom's public
 # Artifactory).
 ARG APT_MIRROR=""
-ARG SALT_GPG_KEY_URL="https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public"
-ARG SALT_APT_REPO_URL="https://packages.broadcom.com/artifactory/saltproject-deb"
+ARG SALT_GPG_KEY_URL
+ARG SALT_APT_REPO_URL
 
 LABEL org.opencontainers.image.title="Salt Minion Kubernetes"
 LABEL org.opencontainers.image.description="Salt Minion runtime preloaded with saltext.vault and saltext.kubernetes, for RBAC-driven kube-bench compliance assessments"

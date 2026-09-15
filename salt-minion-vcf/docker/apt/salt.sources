@@ -5,10 +5,10 @@ Description: Salt has many possible uses, including configuration management.
   infrastructure administration tasks and ensure that all the components of your
   infrastructure are operating in a consistent desired state.
   - Website: https://saltproject.io
-  - Public key: https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public
+  - Public key: ${SALT_GPG_KEY_URL}
 Enabled: yes
 Types: deb
-URIs: https://packages.broadcom.com/artifactory/saltproject-deb
+URIs: ${SALT_APT_REPO_URL}
 Signed-By: /etc/apt/keyrings/salt-archive-keyring.pgp
 Suites: stable
 Components: main

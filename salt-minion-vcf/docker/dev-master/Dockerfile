@@ -11,8 +11,8 @@ ARG SALT_VERSION=3008.2
 # Optional internal mirrors for air-gapped/restricted-network builds. See
 # the main Dockerfile for details; these default to the public mirrors.
 ARG APT_MIRROR=""
-ARG SALT_GPG_KEY_URL="https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public"
-ARG SALT_APT_REPO_URL="https://packages.broadcom.com/artifactory/saltproject-deb"
+ARG SALT_GPG_KEY_URL
+ARG SALT_APT_REPO_URL
 
 # See docker/apt/salt.sources for why this is vendored instead of curled
 # from GitHub's release-assets CDN at build time.
