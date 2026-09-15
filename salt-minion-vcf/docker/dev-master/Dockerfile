@@ -12,7 +12,7 @@ ARG SALT_VERSION=3008.2
 # the main Dockerfile for details; these default to the public mirrors.
 ARG APT_MIRROR=""
 ARG SALT_GPG_KEY_URL
-ARG SALT_APT_REPO_URL=https://repo.saltproject.io/apt/ubuntu
+ARG SALT_APT_REPO_URL
 
 # See docker/apt/salt.sources for why this is vendored instead of curled
 # from GitHub's release-assets CDN at build time.

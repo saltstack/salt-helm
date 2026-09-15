@@ -32,7 +32,7 @@ ARG PIP_ONLY_BINARY=""
 # Artifactory).
 ARG APT_MIRROR=""
 ARG SALT_GPG_KEY_URL
-ARG SALT_APT_REPO_URL=https://repo.saltproject.io/apt/ubuntu
+ARG SALT_APT_REPO_URL
 
 LABEL org.opencontainers.image.title="Salt Minion Kubernetes"
 LABEL org.opencontainers.image.description="Salt Minion runtime preloaded with saltext.vault and saltext.kubernetes, for RBAC-driven kube-bench compliance assessments"

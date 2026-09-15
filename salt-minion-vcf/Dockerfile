@@ -18,7 +18,7 @@ ARG PIP_ONLY_BINARY=""
 # Artifactory).
 ARG APT_MIRROR=""
 ARG SALT_GPG_KEY_URL
-ARG SALT_APT_REPO_URL=https://repo.saltproject.io/apt/ubuntu
+ARG SALT_APT_REPO_URL
 
 LABEL org.opencontainers.image.title="Salt Minion VCF"
 LABEL org.opencontainers.image.description="Portable Salt Minion runtime with configurable Salt extensions for VMware Cloud Foundation automation"
