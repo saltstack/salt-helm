@@ -50,7 +50,9 @@ RUN set -eu; \
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg tini iproute2 dnsutils netcat-openbsd \
     && mkdir -m 755 -p /etc/apt/keyrings \
-    && curl -fsSL https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public | gpg --dearmor -o /etc/apt/keyrings/salt-archive-keyring.pgp \
+    && curl -fsSL https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public -o /tmp/salt-archive-keyring.asc \
+    && gpg --dearmor -o /etc/apt/keyrings/salt-archive-keyring.pgp /tmp/salt-archive-keyring.asc \
+    && rm -f /tmp/salt-archive-keyring.asc \
     && printf 'Package: salt-*\nPin: version 3008.*\nPin-Priority: 1001\n' \
        > /etc/apt/preferences.d/salt-pin-1001 \
     && apt-get update \
