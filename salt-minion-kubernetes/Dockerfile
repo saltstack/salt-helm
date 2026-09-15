@@ -32,7 +32,7 @@ ARG PIP_ONLY_BINARY=""
 # Artifactory).
 ARG APT_MIRROR=""
 ARG SALT_GPG_KEY_URL
-ARG SALT_APT_REPO_URL
+ARG SALT_APT_REPO_URL=https://repo.saltproject.io/apt/ubuntu
 
 LABEL org.opencontainers.image.title="Salt Minion Kubernetes"
 LABEL org.opencontainers.image.description="Salt Minion runtime preloaded with saltext.vault and saltext.kubernetes, for RBAC-driven kube-bench compliance assessments"
@@ -47,7 +47,7 @@ RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
       sed -i "s#^URIs: .*#URIs: ${APT_MIRROR}#" /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
-    sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL}#" /etc/apt/sources.list.d/salt.sources
+    sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL:-https://repo.saltproject.io/apt/ubuntu}" /etc/apt/sources.list.d/salt.sources
 
 # ca-certificates/curl/gnupg/tini/iproute2/dnsutils/netcat-openbsd are OS
 # packages that should track the latest security patches from Ubuntu's own
