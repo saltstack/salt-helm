@@ -11,18 +11,18 @@ ARG SALT_VERSION=3008.2
 # Optional internal mirrors for air-gapped/restricted-network builds. See
 # the main Dockerfile for details; these default to the public mirrors.
 ARG APT_MIRROR=""
-ARG SALT_GPG_KEY_URL="https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public"
-ARG SALT_APT_REPO_URL="https://packages.broadcom.com/artifactory/saltproject-deb"
+ARG SALT_GPG_KEY_URL
+ARG SALT_APT_REPO_URL
 
 # See docker/apt/salt.sources for why this is vendored instead of curled
 # from GitHub's release-assets CDN at build time.
-COPY docker/apt/salt.sources /etc/apt/sources.list.d/salt.sources
+RUN curl -fsSL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
 
 RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
       sed -i "s#^URIs: .*#URIs: ${APT_MIRROR}#" /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
-    sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL}#" /etc/apt/sources.list.d/salt.sources
+    sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL:-https://repo.saltproject.io/apt/ubuntu/}" /etc/apt/sources.list.d/salt.sources
 
 # ca-certificates/curl/gnupg/tini are OS packages that should track the
 # latest security patches from Ubuntu's own release channel rather than
@@ -31,12 +31,8 @@ RUN set -eu; \
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg tini \
-    && mkdir -p /etc/apt/keyrings \
-    && chmod 0755 /etc/apt/keyrings \
-    && curl --retry 5 --retry-all-errors --retry-delay 2 -fsSL \
-       -o /tmp/salt-archive-keyring.asc "${SALT_GPG_KEY_URL}" \
-    && gpg --dearmor -o /etc/apt/keyrings/salt-archive-keyring.pgp /tmp/salt-archive-keyring.asc \
-    && rm -f /tmp/salt-archive-keyring.asc \
+    && mkdir -m 755 -p /etc/apt/keyrings \
+    && curl -fsSL https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public | gpg --dearmor -o /etc/apt/keyrings/salt-archive-keyring.pgp \
     && printf 'Package: salt-*\nPin: version 3008.*\nPin-Priority: 1001\n' \
        > /etc/apt/preferences.d/salt-pin-1001 \
     && apt-get update \

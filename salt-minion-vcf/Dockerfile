@@ -17,8 +17,8 @@ ARG PIP_ONLY_BINARY=""
 # empty to use the public defaults (Ubuntu's own mirrors, Broadcom's public
 # Artifactory).
 ARG APT_MIRROR=""
-ARG SALT_GPG_KEY_URL="https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public"
-ARG SALT_APT_REPO_URL="https://packages.broadcom.com/artifactory/saltproject-deb"
+ARG SALT_GPG_KEY_URL
+ARG SALT_APT_REPO_URL
 
 LABEL org.opencontainers.image.title="Salt Minion VCF"
 LABEL org.opencontainers.image.description="Portable Salt Minion runtime with configurable Salt extensions for VMware Cloud Foundation automation"
@@ -31,7 +31,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 # won't auto-fetch via AIA, causing random build failures. Refresh this file
 # from https://github.com/saltstack/salt-install-guide/releases if Salt
 # changes its packaging config.
-COPY docker/apt/salt.sources /etc/apt/sources.list.d/salt.sources
+RUN curl -fsSL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
 
 # Point apt at internal mirrors when APT_MIRROR/SALT_APT_REPO_URL are set
 # (air-gapped/restricted-network builds); otherwise these are no-ops that
@@ -40,19 +40,18 @@ RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
       sed -i "s#^URIs: .*#URIs: ${APT_MIRROR}#" /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
-    sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL}#" /etc/apt/sources.list.d/salt.sources
+    sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL:-https://repo.saltproject.io/apt/ubuntu/}" /etc/apt/sources.list.d/salt.sources
 
 # ca-certificates/curl/gnupg/tini/iproute2/dnsutils/netcat-openbsd are OS
 # packages that should track the latest security patches from Ubuntu's own
 # release channel rather than being frozen at build time - only Salt's own
 # packages are version-pinned (SALT_VERSION), just below.
 # hadolint ignore=DL3008
+# hadolint ignore=DL3009
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg tini iproute2 dnsutils netcat-openbsd \
-    && mkdir -p /etc/apt/keyrings \
-    && chmod 0755 /etc/apt/keyrings \
-    && curl --retry 5 --retry-all-errors --retry-delay 2 -fsSL \
-       -o /tmp/salt-archive-keyring.asc "${SALT_GPG_KEY_URL}" \
+    && mkdir -m 755 -p /etc/apt/keyrings \
+    && curl -fsSL https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public -o /tmp/salt-archive-keyring.asc \
     && gpg --dearmor -o /etc/apt/keyrings/salt-archive-keyring.pgp /tmp/salt-archive-keyring.asc \
     && rm -f /tmp/salt-archive-keyring.asc \
     && printf 'Package: salt-*\nPin: version 3008.*\nPin-Priority: 1001\n' \

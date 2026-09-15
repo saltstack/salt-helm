@@ -12,8 +12,8 @@ services:
         # Fallbacks below must match the Dockerfile's own ARG defaults: an
         # explicit empty string here would override (blank out) those
         # defaults, unlike leaving the build arg unset entirely.
-        SALT_GPG_KEY_URL: "${SALT_GPG_KEY_URL:-https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public}"
-        SALT_APT_REPO_URL: "${SALT_APT_REPO_URL:-https://packages.broadcom.com/artifactory/saltproject-deb}"
+        SALT_GPG_KEY_URL: "${SALT_GPG_KEY_URL:-}"
+        SALT_APT_REPO_URL: "${SALT_APT_REPO_URL:-}"
     image: "${IMAGE_REPOSITORY:-salt-minion-vcf}:${IMAGE_TAG:-0.1.0}"
     container_name: salt-minion-vcf
     hostname: salt-minion-vcf
@@ -65,8 +65,8 @@ services:
       args:
         SALT_VERSION: "${SALT_VERSION:-3008.2}"
         APT_MIRROR: "${APT_MIRROR:-}"
-        SALT_GPG_KEY_URL: "${SALT_GPG_KEY_URL:-https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public}"
-        SALT_APT_REPO_URL: "${SALT_APT_REPO_URL:-https://packages.broadcom.com/artifactory/saltproject-deb}"
+        SALT_GPG_KEY_URL: "${SALT_GPG_KEY_URL:-}"
+        SALT_APT_REPO_URL: "${SALT_APT_REPO_URL:-}"
     image: "salt-minion-vcf-dev-master:${SALT_VERSION:-3008.2}"
     container_name: salt-minion-vcf-dev-master
     hostname: salt-master
