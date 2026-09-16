@@ -42,7 +42,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 # salt.sources is vendored from the salt-install-guide release rather than
 # curled at build time - see salt-minion-vcf/docker/apt/salt.sources for why
 # (intermittent cert-chain failures on Linux/OpenSSL clients).
-RUN curl -fsSL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
+RUN curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
 
 RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \

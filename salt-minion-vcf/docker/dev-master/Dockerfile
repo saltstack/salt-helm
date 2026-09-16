@@ -16,7 +16,7 @@ ARG SALT_APT_REPO_URL
 
 # See docker/apt/salt.sources for why this is vendored instead of curled
 # from GitHub's release-assets CDN at build time.
-RUN curl -fsSL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
+RUN curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
 
 RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
