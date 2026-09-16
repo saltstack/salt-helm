@@ -51,18 +51,20 @@ RUN set -eu; \
 # hadolint ignore=DL3008,DL3009,SC2174
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg tini iproute2 dnsutils netcat-openbsd \
-    && mkdir -m 755 -p /etc/apt/keyrings \
-    && curl -fsSL https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public -o /tmp/salt-archive-keyring.asc \
-    && gpg --dearmor -o /etc/apt/keyrings/salt-archive-keyring.pgp /tmp/salt-archive-keyring.asc \
-    && rm -f /tmp/salt-archive-keyring.asc \
-    && printf 'Package: salt-*\nPin: version 3008.*\nPin-Priority: 1001\n' \
-       > /etc/apt/preferences.d/salt-pin-1001 \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-       "salt-common=${SALT_VERSION}" \
-       "salt-minion=${SALT_VERSION}" \
-    && apt-get clean \
+    && mkdir -p /etc/apt/keyrings \
     && rm -rf /var/lib/apt/lists/*
+
+RUN set -eu; \
+    curl -fsSL -o /tmp/bootstrap-salt.sh https://github.com/saltstack/salt-bootstrap/releases/latest/download/bootstrap-salt.sh; \
+    curl -fsSL -o /tmp/bootstrap-salt.sh.sha256 https://github.com/saltstack/salt-bootstrap/releases/latest/download/bootstrap-salt.sh.sha256; \
+    printf '%s  /tmp/bootstrap-salt.sh\n' "$(cut -d' ' -f1 /tmp/bootstrap-salt.sh.sha256)" > /tmp/bootstrap-salt.sh.sha256.check; \
+    sha256sum -c /tmp/bootstrap-salt.sh.sha256.check; \
+    if [ "$SALT_VERSION" = "latest" ]; then \
+        sh /tmp/bootstrap-salt.sh -X -P onedir; \
+    else \
+        sh /tmp/bootstrap-salt.sh -X -P onedir "$SALT_VERSION"; \
+    fi; \
+    rm -f /tmp/bootstrap-salt.sh /tmp/bootstrap-salt.sh.sha256 /tmp/bootstrap-salt.sh.sha256.check
 
 
 # Install any Salt extension packages listed by the image builder.
