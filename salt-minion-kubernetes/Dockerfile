@@ -48,7 +48,6 @@ RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
       sed -i "s#^URIs: .*#URIs: ${APT_MIRROR}#" /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
-    mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources; \
 
 
 # ca-certificates/curl/gnupg/tini/iproute2/dnsutils/netcat-openbsd are OS
