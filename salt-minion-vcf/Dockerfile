@@ -42,7 +42,7 @@ RUN set -eu; \
       sed -i "s#^URIs: .*#URIs: ${APT_MIRROR}#" /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
     mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources; \
-    sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL:-https://repo.saltproject.io/apt/ubuntu/}" /etc/apt/sources.list.d/salt.sources
+
 
 # ca-certificates/curl/gnupg/tini/iproute2/dnsutils/netcat-openbsd are OS
 # packages that should track the latest security patches from Ubuntu's own
