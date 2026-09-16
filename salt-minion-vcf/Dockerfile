@@ -32,7 +32,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 # won't auto-fetch via AIA, causing random build failures. Refresh this file
 # from https://github.com/saltstack/salt-install-guide/releases if Salt
 # changes its packaging config.
-RUN curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
+RUN mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
 
 # Point apt at internal mirrors when APT_MIRROR/SALT_APT_REPO_URL are set
 # (air-gapped/restricted-network builds); otherwise these are no-ops that

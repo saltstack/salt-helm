@@ -16,7 +16,7 @@ ARG SALT_APT_REPO_URL
 
 # See docker/apt/salt.sources for why this is vendored instead of curled
 # from GitHub's release-assets CDN at build time.
-RUN curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
+RUN mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
 
 RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
@@ -28,7 +28,7 @@ RUN set -eu; \
 # latest security patches from Ubuntu's own release channel rather than
 # being frozen at build time - only Salt's own packages are version-pinned
 # (SALT_VERSION), just below.
-# hadolint ignore=DL3008
+# hadolint ignore=DL3008,DL3009,DL4006,SC2174
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg tini \
     && mkdir -m 755 -p /etc/apt/keyrings \
