@@ -32,7 +32,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 # won't auto-fetch via AIA, causing random build failures. Refresh this file
 # from https://github.com/saltstack/salt-install-guide/releases if Salt
 # changes its packaging config.
-RUN mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
+
 
 # Point apt at internal mirrors when APT_MIRROR/SALT_APT_REPO_URL are set
 # (air-gapped/restricted-network builds); otherwise these are no-ops that
@@ -63,6 +63,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
 # Install any Salt extension packages listed by the image builder.
 # This deliberately does not hard-code saltext-vcf into the Dockerfile.
 # PIP_INDEX_URL/PIP_TRUSTED_HOST/PIP_ONLY_BINARY are only unset when empty so

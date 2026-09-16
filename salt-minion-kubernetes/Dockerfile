@@ -42,7 +42,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 # salt.sources is vendored from the salt-install-guide release rather than
 # curled at build time - see salt-minion-vcf/docker/apt/salt.sources for why
 # (intermittent cert-chain failures on Linux/OpenSSL clients).
-RUN mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
+
 
 RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
@@ -70,6 +70,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
 # Install any Salt extension packages listed by the image builder.
 # PIP_INDEX_URL/PIP_TRUSTED_HOST/PIP_ONLY_BINARY are only unset when empty so
 # pip is not handed a literal empty --index-url.

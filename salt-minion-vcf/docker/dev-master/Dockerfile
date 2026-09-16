@@ -16,7 +16,7 @@ ARG SALT_APT_REPO_URL
 
 # See docker/apt/salt.sources for why this is vendored instead of curled
 # from GitHub's release-assets CDN at build time.
-RUN mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
+
 
 RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
@@ -42,6 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
 RUN mkdir -p /etc/salt/master.d && cat > /etc/salt/master.d/dev.conf <<'EOF'
 interface: 0.0.0.0
 log_level: info
