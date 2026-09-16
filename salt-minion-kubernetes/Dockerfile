@@ -48,6 +48,7 @@ RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
       sed -i "s#^URIs: .*#URIs: ${APT_MIRROR}#" /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
+    mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources; \
     sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL:-https://repo.saltproject.io/apt/ubuntu/}" /etc/apt/sources.list.d/salt.sources
 
 # ca-certificates/curl/gnupg/tini/iproute2/dnsutils/netcat-openbsd are OS
@@ -70,7 +71,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
+
 # Install any Salt extension packages listed by the image builder.
 # PIP_INDEX_URL/PIP_TRUSTED_HOST/PIP_ONLY_BINARY are only unset when empty so
 # pip is not handed a literal empty --index-url.

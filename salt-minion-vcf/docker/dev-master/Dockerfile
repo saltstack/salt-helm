@@ -22,6 +22,7 @@ RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
       sed -i "s#^URIs: .*#URIs: ${APT_MIRROR}#" /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
+    mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources; \
     sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL:-https://repo.saltproject.io/apt/ubuntu/}" /etc/apt/sources.list.d/salt.sources
 
 # ca-certificates/curl/gnupg/tini are OS packages that should track the
@@ -42,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /etc/apt/sources.list.d && curl -fslL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources -o /etc/apt/sources.list.d/salt.sources
+
 RUN mkdir -p /etc/salt/master.d && cat > /etc/salt/master.d/dev.conf <<'EOF'
 interface: 0.0.0.0
 log_level: info
