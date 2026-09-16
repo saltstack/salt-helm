@@ -47,8 +47,7 @@ RUN set -eu; \
 # packages that should track the latest security patches from Ubuntu's own
 # release channel rather than being frozen at build time - only Salt's own
 # packages are version-pinned (SALT_VERSION), just below.
-# hadolint ignore=DL3008
-# hadolint ignore=DL3009
+# hadolint ignore=DL3008,DL3009,SC2174
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg tini iproute2 dnsutils netcat-openbsd \
     && mkdir -m 755 -p /etc/apt/keyrings \
