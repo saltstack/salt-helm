@@ -31,8 +31,8 @@ jobs:
             || { echo "No CHANGELOG.md entry for salt-minion-vcf-image/v${{ steps.meta.outputs.version }}" >&2; exit 1; }
       - uses: docker/build-push-action@v6
         with:
-          context: salt-minion-vcf
-          file: salt-minion-vcf/Dockerfile
+          context: src/minion/vcf
+          file: src/minion/vcf/Dockerfile
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/salt-minion-vcf:${{ steps.meta.outputs.version }}

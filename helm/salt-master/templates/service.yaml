@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: salt-master
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: salt-master
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: salt-master
+  ports:
+    - name: publish
+      port: 4505
+      targetPort: publish
+      {{- if eq .Values.service.type "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.publish }}
+      {{- end }}
+    - name: ret
+      port: 4506
+      targetPort: ret
+      {{- if eq .Values.service.type "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.ret }}
+      {{- end }}

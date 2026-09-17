@@ -1,4 +1,4 @@
-module github.com/saltstack/salt-helm/salt-key-operator
+module github.com/saltstack/salt-kubernetes/salt-key-operator
 
 go 1.27.1
 

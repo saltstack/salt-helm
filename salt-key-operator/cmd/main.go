@@ -19,8 +19,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	saltv1alpha1 "github.com/saltstack/salt-helm/salt-key-operator/api/v1alpha1"
-	"github.com/saltstack/salt-helm/salt-key-operator/internal/controller"
+	saltv1alpha1 "github.com/saltstack/salt-kubernetes/salt-key-operator/api/v1alpha1"
+	"github.com/saltstack/salt-kubernetes/salt-key-operator/internal/controller"
 )
 
 var scheme = runtime.NewScheme()

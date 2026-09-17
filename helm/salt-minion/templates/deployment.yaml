@@ -1,0 +1,97 @@
+{{- if eq .Values.agent.authMode "in_cluster" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: salt-minion
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: salt-minion
+    app.kubernetes.io/name: salt-minion
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  replicas: {{ .Values.agent.replicas }}
+  selector:
+    matchLabels:
+      app: salt-minion
+  template:
+    metadata:
+      labels:
+        app: salt-minion
+        app.kubernetes.io/name: salt-minion
+    spec:
+      {{- $keySecret := .Values.agent.minion.keySecretName | default (printf "salt-minion-%s-key" .Release.Name) }}
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- if .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.agent.nodeSelector | nindent 8 }}
+      {{ end }}
+      securityContext:
+        {{- toYaml .Values.agent.podSecurityContext | nindent 8 }}
+      containers:
+        - name: salt-minion
+          image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+          env:
+            - name: SALT_MASTER
+              {{- if kindIs "slice" .Values.agent.saltMasterHost }}
+              # docker-entrypoint.sh renders this as a YAML list (Salt's
+              # native multi-master mode) when it contains a comma - see
+              # https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html
+              value: {{ join "," .Values.agent.saltMasterHost | quote }}
+              {{- else }}
+              value: {{ .Values.agent.saltMasterHost | quote }}
+              {{- end }}
+            - name: SALT_MASTER_PORT
+              value: {{ .Values.agent.saltMasterPort | quote }}
+            - name: SALT_PUBLISH_PORT
+              value: {{ .Values.agent.saltPublishPort | quote }}
+            - name: SALT_AUTH_TIMEOUT
+              value: {{ .Values.agent.authTimeout | quote }}
+            - name: SALT_MASTER_ALIVE_INTERVAL
+              value: {{ .Values.agent.masterAliveInterval | quote }}
+            - name: SALT_RECON_DEFAULT
+              value: {{ .Values.agent.reconDefault | quote }}
+            - name: SALT_RECON_MAX
+              value: {{ .Values.agent.reconMax | quote }}
+            - name: SALT_RECON_RANDOMIZE
+              value: {{ .Values.agent.reconRandomize | quote }}
+            {{- if .Values.agent.minion.id }}
+            - name: SALT_MINION_ID
+              value: {{ .Values.agent.minion.id | quote }}
+            {{- end }}
+            - name: SALT_LOG_LEVEL
+              value: {{ default "info" .Values.agent.logLevel | quote }}
+            # Vault integration (saltext.vault) - all optional, disabled
+            # unless VAULT_ADDR is set. See values.yaml agent.vault.
+            - name: VAULT_ADDR
+              value: {{ .Values.agent.vault.addr | quote }}
+            - name: VAULT_AUTH_METHOD
+              value: {{ .Values.agent.vault.authMethod | quote }}
+            - name: VAULT_ROLE_ID
+              value: {{ .Values.agent.vault.roleId | quote }}
+            - name: VAULT_SECRET_ID
+              value: {{ .Values.agent.vault.secretId | quote }}
+            - name: VAULT_SECRET_ID_FILE
+              value: {{ .Values.agent.vault.secretIdFile | quote }}
+            - name: VAULT_TOKEN
+              value: {{ .Values.agent.vault.token | quote }}
+            - name: VAULT_TOKEN_FILE
+              value: {{ .Values.agent.vault.tokenFile | quote }}
+            - name: VAULT_SDB_PROFILE
+              value: {{ .Values.agent.vault.sdbProfile | quote }}
+          volumeMounts:
+            - name: minion-keys
+              mountPath: /etc/salt/pki
+              readOnly: true
+          securityContext:
+            {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
+      volumes:
+        - name: minion-keys
+          secret:
+            secretName: {{ $keySecret }}
+        - name: minion-config
+          configMap:
+            name: {{ .Release.Name }}-minion-config
+{{- end }}
+

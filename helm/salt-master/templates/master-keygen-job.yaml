@@ -1,0 +1,38 @@
+{{- $masterKeySecret := .Values.agent.masterKeySecretName | default (printf "%s-master-keys" .Release.Name) -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-master-keygen
+  namespace: {{ .Values.namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      restartPolicy: OnFailure
+      containers:
+        - name: master-keygen
+          image: bitnami/kubectl:latest
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              set -e
+
+              secret={{ $masterKeySecret }}
+              ns={{ .Values.namespace }}
+
+              if kubectl get secret "$secret" -n "$ns" >/dev/null 2>&1; then
+                echo "Secret $secret already exists – skipping generation"
+                exit 0
+              fi
+
+              TMP=$(mktemp -d)
+              openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$TMP/master.pem"
+              openssl rsa -pubout -in "$TMP/master.pem" -out "$TMP/master.pub"
+
+              kubectl create secret generic "$secret" -n "$ns" \
+                --from-file=master.pem="$TMP/master.pem" \
+                --from-file=master.pub="$TMP/master.pub"

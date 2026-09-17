@@ -28,11 +28,11 @@ jobs:
       - name: Verify CHANGELOG.md has an entry for this release
         run: |
           grep -Eq "^#+ salt-master-image/v${{ steps.meta.outputs.version }}$" \
-            docker/salt-master/CHANGELOG.md \
+            src/master/CHANGELOG.md \
             || { echo "No CHANGELOG.md entry for salt-master-image/v${{ steps.meta.outputs.version }}" >&2; exit 1; }
       - uses: docker/build-push-action@v6
         with:
-          context: docker/salt-master
+          context: src/master
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/salt-master:${{ steps.meta.outputs.version }}

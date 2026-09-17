@@ -1,0 +1,153 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: salt-master
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: salt-master
+    app.kubernetes.io/name: salt-master
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  # Headless Service, not the flat ClusterIP/NodePort one - StatefulSet needs
+  # this specifically for the stable per-ordinal DNS names
+  # (salt-master-N.salt-master-headless...) that let a
+  # minion's multi-master `master:` list address each replica individually.
+  # See templates/service-headless.yaml.
+
+  selector:
+    matchLabels:
+      app: salt-master
+  template:
+    metadata:
+      labels:
+        app: salt-master
+        app.kubernetes.io/name: salt-master
+    spec:
+
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.agent.podSecurityContext | nindent 8 }}
+
+      containers:
+        - name: salt-master
+          image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+          env:
+            - name: SALT_AUTO_ACCEPT
+              value: {{ .Values.agent.autoAccept | quote }}
+            - name: SALT_PRESENCE_EVENTS
+              value: {{ .Values.agent.presenceEvents | quote }}
+          ports:
+            - name: publish
+              containerPort: 4505
+            - name: ret
+              containerPort: 4506
+          volumeMounts:
+              - name: master-keys
+                mountPath: /etc/salt/pki/master
+                readOnly: true
+            {{- if .Values.agent.trustedMinions.enabled }}
+               # NOT the ConfigMap directly (see the trusted-minions-sync
+               # sidecar below for why) - emptyDirs kept in sync with it. This
+               # becomes the ONLY way minions get accepted once enabled:
+              - name: trusted-minions-live
+                mountPath: /etc/salt/pki/master/minions
+              - name: trusted-minions-pre
+                mountPath: /etc/salt/pki/master/minions_pre
+              - name: trusted-minions-rejected
+                mountPath: /etc/salt/pki/master/minions_rejected
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
+  
+        - name: trusted-minions-sync
+          # Reuses the master image itself (has cp/sh) rather than pulling
+          # something else in - this sidecar's only job is copying
+          # salt-key-operator's ConfigMap into a real writable directory.
+          #
+          # WHY THIS SIDECAR EXISTS (do not "simplify" by mounting the
+          # ConfigMap directly onto /etc/salt/pki/master/minions instead):
+          # Kubernetes ConfigMap volumes always mount files as symlinks
+          # (the atomic ..data indirection scheme) - there is no way to
+          # get a plain regular file out of a ConfigMap volume mount.
+          # Salt 3008's localfs_key cache driver
+          # (salt/cache/localfs_key.py) explicitly rejects symlinks in
+          # every read path (fetch/list_/list_all/contains all check
+          # `keyfile.is_file() and not keyfile.is_symlink()`) as a PKI-
+          # tampering hardening measure added in 3008.0 - a minion whose
+          # key exists ONLY as a ConfigMap-mounted symlink is invisible to
+          # Salt and gets rejected, confirmed by direct testing against a
+          # real cluster. `cp` dereferences a symlink source by default,
+          # producing a genuine regular file at the destination, which is
+          # what makes this work.
+          image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -u
+              while true; do
+                for f in /var/run/salt-key-operator/trusted-minions/*; do
+                  [ -e "$f" ] || continue
+                  b="$(basename \"$f\")"
+                  cp -f "$f" "/etc/salt/pki/master/minions/$b"
+                  # Mirror salt-key -a's actual move semantics: an accepted
+                  # key must not also linger as pending/rejected, or Salt's
+                  # own key-listing (accepted, then pending, then rejected,
+                  # later entries overwriting earlier ones for the same ID)
+                  # reports the stale pending/rejected state instead -
+                  # confirmed by direct testing (a minion that auth'd
+                  # before its key was accepted leaves exactly this kind of
+                  # leftover in minions_pre).
+                  rm -f "/etc/salt/pki/master/minions_pre/$b" "/etc/salt/pki/master/minions_rejected/$b"
+                done
+                for f in /etc/salt/pki/master/minions/*; do
+                  [ -e "$f" ] || continue
+                  b="$(basename \"$f\")"
+                  [ -e "/var/run/salt-key-operator/trusted-minions/$b" ] || rm -f "$f"
+                done
+                sleep {{ .Values.agent.trustedMinions.syncIntervalSeconds }}
+              done
+          volumeMounts:
+            - name: trusted-minions-src
+              mountPath: /var/run/salt-key-operator/trusted-minions
+              readOnly: true
+            - name: trusted-minions-live
+              mountPath: /etc/salt/pki/master/minions
+            - name: trusted-minions-pre
+              mountPath: /etc/salt/pki/master/minions_pre
+            - name: trusted-minions-rejected
+              mountPath: /etc/salt/pki/master/minions_rejected
+          securityContext:
+            {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+
+
+      volumes:
+          - name: master-keys
+            secret:
+                secretName: {{ .Values.agent.masterKeySecretName | default (printf "%s-master-keys" .Release.Name) }}
+{{- if .Values.agent.trustedMinions.enabled }}
+          - name: trusted-minions-src
+            configMap:
+              name: {{ .Values.agent.trustedMinions.configMapName }}
+          - name: trusted-minions-live
+            emptyDir: {}
+          - name: trusted-minions-pre
+            emptyDir: {}
+          - name: trusted-minions-rejected
+            emptyDir: {}
+{{- end }}
+

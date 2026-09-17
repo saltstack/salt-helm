@@ -1,4 +1,4 @@
-# salt-helm
+# salt-kubernetes
 
 Helm charts for deploying different flavours of Salt images to Kubernetes.
 
@@ -24,10 +24,10 @@ component's own semver, independent of Salt's version).
 
 ```bash
 helm install salt-master-kubernetes \
-  oci://ghcr.io/saltstack/salt-helm/charts/salt-master-kubernetes \
+  oci://ghcr.io/saltstack/salt-kubernetes/charts/salt-master-kubernetes \
   --version 1.0.0 \
   --namespace salt-master --create-namespace \
-  --set agent.image.repository=ghcr.io/saltstack/salt-helm/salt-master \
+  --set agent.image.repository=ghcr.io/saltstack/salt-kubernetes/salt-master \
   --set agent.image.tag=1.0.0
 ```
 
@@ -38,7 +38,7 @@ with the `SaltMinionKey` CRD, see
 
 ```bash
 helm install salt-key-operator \
-  oci://ghcr.io/saltstack/salt-helm/charts/salt-key-operator \
+  oci://ghcr.io/saltstack/salt-kubernetes/charts/salt-key-operator \
   --version 0.1.0 \
   --namespace salt-master
 ```
@@ -47,22 +47,22 @@ helm install salt-key-operator \
 
 ```bash
 helm install salt-minion-kubernetes \
-  oci://ghcr.io/saltstack/salt-helm/charts/salt-minion-kubernetes \
+  oci://ghcr.io/saltstack/salt-kubernetes/charts/salt-minion-kubernetes \
   --version 1.0.0 \
   --set agent.saltMasterHost=salt-master.example.com
 ```
 
 (`agent.image.repository` already defaults to the published
-`ghcr.io/saltstack/salt-helm/salt-minion-kubernetes` image - no override
+`ghcr.io/saltstack/salt-kubernetes/salt-minion-kubernetes` image - no override
 needed there.)
 
 ### salt-minion-vcf
 
 ```bash
 helm install salt-minion-vcf \
-  oci://ghcr.io/saltstack/salt-helm/charts/salt-minion-vcf \
+  oci://ghcr.io/saltstack/salt-kubernetes/charts/salt-minion-vcf \
   --version 1.0.0 \
-  --set image.repository=ghcr.io/saltstack/salt-helm/salt-minion-vcf \
+  --set image.repository=ghcr.io/saltstack/salt-kubernetes/salt-minion-vcf \
   --set image.tag=0.1.1 \
   --set salt.master=salt-master.example.com
 ```
@@ -77,7 +77,7 @@ docker run -d \
   --name salt-minion-vcf \
   -e SALT_MASTER=salt-master.example.com \
   -v salt-minion-vcf-pki:/etc/salt/pki/minion \
-  ghcr.io/saltstack/salt-helm/salt-minion-vcf:0.1.1
+  ghcr.io/saltstack/salt-kubernetes/salt-minion-vcf:0.1.1
 ```
 
 See each chart's `values.yaml` for the full list of configurable parameters.
