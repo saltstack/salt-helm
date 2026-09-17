@@ -1,5 +1,7 @@
 # Namespace where all salt-master objects are deployed.
 namespace: salt-master
+rbac:
+  create: true
 
 agent:
   image:
@@ -109,7 +111,7 @@ agent:
   # false to keep the traditional salt-key workflow (fine for a single
   # replica; does NOT give consistent acceptance across replicas > 1).
   trustedMinions:
-    enabled: false
+    enabled: true
     # Set false to reference an existing ConfigMap (e.g. created by another
     # tool) instead of having this chart create one.
     createConfigMap: true
@@ -132,7 +134,7 @@ agent:
   # /etc/salt/pki at all anymore.
   jobCache:
     persistence:
-      enabled: true
+      enabled: false
       # Empty uses the cluster's default StorageClass. No hostPath option
       # here on purpose - each StatefulSet replica gets its own exclusive
       # PVC via volumeClaimTemplates, and per-ordinal hostPath would need a

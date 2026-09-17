@@ -15,7 +15,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: keygen
-          image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
+          image: bitnami/kubectl:latest
           command: ["/bin/sh","-c"]
           args:
             - |

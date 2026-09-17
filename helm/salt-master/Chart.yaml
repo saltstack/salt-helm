@@ -1,16 +1,10 @@
 apiVersion: v2
 name: salt-master
-description: >
-  Installs a Salt master as a Kubernetes StatefulSet, supporting Salt's
-  native multi-master mode for active-active horizontal scaling (all
-  replicas share one pre-seeded keypair; see
-  https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html).
-  Exposed via a flat Service, a headless Service (in-cluster per-ordinal
-  DNS), and optionally one NodePort Service per replica (external
-  per-ordinal access) for minions that run outside normal pod scheduling
-  (see scripts/push-image-to-nodes.sh). Deliberately minimal: no RBAC and
-  no saltext.kubernetes install, since the master never calls the
-  Kubernetes API itself -- see docker/salt-master/README.md.
+description: >-
+  Installs a Salt master as a Kubernetes Deployment. Exposes the master
+  via a flat Service and optionally per‑ordinal Services for external
+  minion access. Supports trusted‑minion integration with the
+  salt‑key‑operator side‑car. Does not provide multi‑master scaling.
 type: application
 version: 1.0.0
 appVersion: "1.0.0"
@@ -20,3 +14,8 @@ keywords:
   - kubernetes
 maintainers:
   - name: salt-compliance-team
+
+dependencies:
+  - name: salt-key-operator
+    version: ">=0.0.0"
+    repository: "file://../salt-key-operator"
