@@ -29,7 +29,9 @@ set -euo pipefail
 #------------------------------------------------------------
 # Configuration
 #------------------------------------------------------------
-IMAGE_TAG="3008.2"
+IMAGE_TAG_MASTER="3008.2"
+MINION_K8S_IMAGE_TAG="0.1.0"
+MINION_VCF_IMAGE_TAG="0.1.0"
 MAX_IMAGE_SIZE=$((500 * 1024 * 1024))   # 500 MiB
 MAX_LAYERS=30
 
@@ -76,12 +78,12 @@ echo "# --- ShellCheck (skipped)"
 # 4. Helm lint & template validation
 #------------------------------------------------------------
 echo "--- Helm lint"
-helm lint helm/salt-master-kubernetes
+helm lint helm/salt-master
 helm lint helm/salt-minion
 helm lint helm/salt-key-operator
 # Ensure chart dependencies are up to date
 echo "--- Updating Helm dependencies for master chart"
-helm dependency build helm/salt-master-kubernetes
+helm dependency build helm/salt-master
 
 echo "--- YAML lint for GitHub workflow files"
 if command -v yamllint >/dev/null; then
@@ -129,22 +131,22 @@ helm_template "minion‑k8s‑multi" helm/salt-minion \
 #------------------------------------------------------------
 echo "--- Building Docker images"
 # Master image
-sudo docker build -t salt-master:${IMAGE_TAG} -f src/master/Dockerfile src/master
+sudo docker build -t salt-master:${IMAGE_TAG_MASTER} -f src/master/Dockerfile src/master
 # Minion‑kubernetes image
-sudo docker build --build-arg TARGETARCH=amd64 --build-arg INCLUDE_KUBECTL=false -t salt-minion:${IMAGE_TAG} -f src/minion/kubernetes/Dockerfile src/minion/kubernetes
+sudo docker build --build-arg TARGETARCH=amd64 --build-arg INCLUDE_KUBECTL=false -t salt-minion:${MINION_K8S_IMAGE_TAG} -f src/minion/kubernetes/Dockerfile src/minion/kubernetes
 # Minion‑vcf image
-sudo docker build --build-arg TARGETARCH=amd64 -t salt-minion-vcf:${IMAGE_TAG} -f src/minion/vcf/Dockerfile src/minion/vcf
+sudo docker build --build-arg TARGETARCH=amd64 -t salt-minion-vcf:${MINION_VCF_IMAGE_TAG} -f src/minion/vcf/Dockerfile src/minion/vcf
 # Operator image
-sudo docker build -t salt-key-operator:${IMAGE_TAG} -f salt-key-operator/Dockerfile salt-key-operator
+sudo docker build -t salt-key-operator:${IMAGE_TAG_MASTER} -f salt-key-operator/Dockerfile salt-key-operator
 
 #------------------------------------------------------------
 # 6. Trivy vulnerability scan (high / critical only)
 #------------------------------------------------------------
 echo "--- Trivy scans"
-for img in salt-master:${IMAGE_TAG} \
-           salt-minion:${IMAGE_TAG} \
-           salt-minion-vcf:${IMAGE_TAG} \
-           salt-key-operator:${IMAGE_TAG}; do
+for img in salt-master:${IMAGE_TAG_MASTER} \
+           salt-minion:${MINION_K8S_IMAGE_TAG} \
+           salt-minion-vcf:${MINION_VCF_IMAGE_TAG} \
+           salt-key-operator:${IMAGE_TAG_MASTER}; do
     echo "Scanning $img"
     trivy image --severity HIGH,CRITICAL --format json --output scan.json "$img"
     if jq -e '.Results[].Vulnerabilities[]?.CVSS | select(. >= 7.0)' scan.json > /dev/null; then
@@ -156,10 +158,10 @@ done
 # 7. Image size / layer limits enforcement
 #------------------------------------------------------------
 echo "--- Enforcing image size / layer limits"
-for img in salt-master:${IMAGE_TAG} \
-           salt-minion:${IMAGE_TAG} \
-           salt-minion-vcf:${IMAGE_TAG} \
-           salt-key-operator:${IMAGE_TAG}; do
+for img in salt-master:${IMAGE_TAG_MASTER} \
+           salt-minion:${MINION_K8S_IMAGE_TAG} \
+           salt-minion-vcf:${MINION_VCF_IMAGE_TAG} \
+           salt-key-operator:${IMAGE_TAG_MASTER}; do
     size=$(sudo docker image inspect "$img" -f '{{.Size}}')
     layers=$(sudo docker image inspect "$img" -f '{{len .RootFS.Layers}}')
     if (( size > MAX_IMAGE_SIZE )) || (( layers > MAX_LAYERS )); then

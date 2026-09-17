@@ -51,7 +51,7 @@ agent:
     repository: ghcr.io/saltstack/salt-kubernetes/salt-minion
     # To use VCF extensions, set repository to the VCF image (e.g., salt-minion-vcf) and appropriate tag
     # repository: ghcr.io/saltstack/salt-kubernetes/salt-minion-vcf
-    tag: "3008.2"
+    tag: ""
     pullPolicy: IfNotPresent
 
   # Sets SALT_LOG_LEVEL / `log_level:` on the minion.
