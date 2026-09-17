@@ -37,39 +37,31 @@ spec:
         - name: salt-master
           image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
           imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
-           env:
-             - name: SALT_AUTO_ACCEPT
-               value: {{ .Values.agent.autoAccept | quote }}
-             - name: SALT_PRESENCE_EVENTS
-               value: {{ .Values.agent.presenceEvents | quote }}
-           ports:
-             - name: publish
-               containerPort: 4505
-             - name: ret
-               containerPort: 4506
-            volumeMounts:
+          env:
+            - name: SALT_AUTO_ACCEPT
+              value: {{ .Values.agent.autoAccept | quote }}
+            - name: SALT_PRESENCE_EVENTS
+              value: {{ .Values.agent.presenceEvents | quote }}
+          ports:
+            - name: publish
+              containerPort: 4505
+            - name: ret
+              containerPort: 4506
+          volumeMounts:
               - name: master-keys
                 mountPath: /etc/salt/pki/master
                 readOnly: true
-{{- if .Values.agent.trustedMinions.enabled }}
-              # NOT the ConfigMap directly (see the trusted-minions-sync
-              # sidecar below for why) - emptyDirs kept in sync with it. This
-              # becomes the ONLY way minions get accepted once enabled:
-              # `salt-key -a` no longer works against this master (Salt
-              # itself only ever reads what the sidecar copies into
-              # minions/). minions_pre/minions_rejected are shared with the
-              # sidecar too (not master.pem/master.pub, which stay off any
-              # shared volume) so it can clean up a minion's own pending/
-              # rejected entry once accepted - otherwise Salt's key-listing
-              # can report the stale pending/rejected state instead of
-              # accepted for the same ID (confirmed by direct testing).
+            {{- if .Values.agent.trustedMinions.enabled }}
+               # NOT the ConfigMap directly (see the trusted-minions-sync
+               # sidecar below for why) - emptyDirs kept in sync with it. This
+               # becomes the ONLY way minions get accepted once enabled:
               - name: trusted-minions-live
                 mountPath: /etc/salt/pki/master/minions
               - name: trusted-minions-pre
                 mountPath: /etc/salt/pki/master/minions_pre
               - name: trusted-minions-rejected
                 mountPath: /etc/salt/pki/master/minions_rejected
-{{- end }}
+            {{- end }}
           securityContext:
             {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
   
@@ -142,11 +134,11 @@ spec:
               cpu: 50m
               memory: 32Mi
 
-        {{- $masterKeySecret := .Values.agent.masterKeySecretName | default (printf "%s-master-keys" .Release.Name) -}}
-        volumes:
+
+      volumes:
           - name: master-keys
             secret:
-              secretName: {{ $masterKeySecret }}
+               secretName: {{ .Values.agent.masterKeySecretName | default (printf "%s-master-keys" .Release.Name) }}
 {{- if .Values.agent.trustedMinions.enabled }}
           - name: trusted-minions-src
             configMap:
