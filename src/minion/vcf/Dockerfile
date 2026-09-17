@@ -61,15 +61,14 @@ RUN id salt >/dev/null 2>&1 || useradd --system --uid 999 --no-create-home --she
 #COPY salt-extensions.txt /tmp/salt-extensions.txt
 #RUN true
 
-COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-COPY scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Non-root: run as the 'salt' system user/group salt-common's own postinst
 # already created (rather than inventing a separate one), and own
 # everything the minion writes to at runtime. saltext-vcf makes remote API
 # calls against vCenter/NSX/SDDC-M/Ops rather than managing local host
 # state, so the minion never needs root inside the container.
-RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh /usr/local/bin/healthcheck.sh \
+RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh  \
     && mkdir -p /etc/salt/minion.d /etc/salt/pki/minion /etc/salt/pillar \
                 /var/cache/salt/minion /var/log/salt \
     && chown -R salt:salt /etc/salt /var/cache/salt /var/log/salt
@@ -106,8 +105,5 @@ ENV SALT_MASTER="" \
 USER 999:999
 
 VOLUME ["/etc/salt/pki/minion"]
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-  CMD ["/usr/local/bin/healthcheck.sh"]
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
