@@ -142,6 +142,7 @@ spec:
               cpu: 50m
               memory: 32Mi
 
+        {{- $masterKeySecret := .Values.agent.masterKeySecretName | default (printf "%s-master-keys" .Release.Name) -}}
         volumes:
           - name: master-keys
             secret:
