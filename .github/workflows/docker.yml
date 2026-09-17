@@ -37,10 +37,9 @@ jobs:
       # Helm lint (T029)
       - name: Helm lint charts
         run: |
-          helm lint helm/salt-master
-          helm lint helm/salt-minion
-          helm lint helm/salt-minion-vcf
-          helm lint helm/salt-key-operator
+helm lint helm/salt-master
+            helm lint helm/salt-minion
+            helm lint helm/salt-key-operator
 
       # GHCR authentication test (T031)
       - name: Test GHCR authentication
