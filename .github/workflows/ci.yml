@@ -26,7 +26,7 @@ jobs:
       - name: hadolint (salt-key-operator)
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: src/operator/salt-key-operator/Dockerfile
+          dockerfile: salt-key-operator/Dockerfile
 
   go:
     runs-on: ubuntu-latest
@@ -133,6 +133,6 @@ jobs:
       - name: Build salt-key-operator image (no push)
         uses: docker/build-push-action@v6
         with:
-          context: src/operator/salt-key-operator
+          context: salt-key-operator
           push: false
           tags: salt-key-operator:ci
