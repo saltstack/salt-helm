@@ -56,6 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Build chart dependencies
+        run: helm dependency build helm/salt-master
       - uses: azure/setup-helm@v4
       - name: helm lint (helm/salt-master)
         run: helm lint helm/salt-master
@@ -71,8 +73,7 @@ jobs:
         run: |
           helm template test helm/salt-master \
             --set agent.replicas=3 \
-            --set agent.masterKeySecretName=my-master-key \
-            --set service.perOrdinal.enabled=true
+            --set agent.masterKeySecretName=my-master-key
       - name: helm template (helm/salt-master, replicas>1 without masterKeySecretName must fail)
         run: |
           if helm template test helm/salt-master --set agent.replicas=3 >/dev/null 2>&1; then
