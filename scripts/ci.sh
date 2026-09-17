@@ -71,8 +71,12 @@ echo "# --- Ruff code lint/format check (skipped)"
 #------------------------------------------------------------
 # 3. ShellCheck
 #------------------------------------------------------------
-echo "# --- ShellCheck (skipped)"
-# shellcheck salt-minion-vcf/scripts/*.sh src/minion/kubernetes/scripts/*.sh || fail "ShellCheck errors"
+echo "# --- ShellCheck"
+if command -v shellcheck >/dev/null; then
+  shellcheck src/minion/vcf/scripts/*.sh src/minion/kubernetes/scripts/*.sh || fail "ShellCheck errors"
+else
+  echo "shellcheck not installed; skipping"
+fi
 
 #------------------------------------------------------------
 # 4. Helm lint & template validation
