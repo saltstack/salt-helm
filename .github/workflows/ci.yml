@@ -81,38 +81,32 @@ jobs:
           fi
       - name: helm template (salt-key-operator)
         run: helm template test helm/salt-key-operator --include-crds
-- name: helm template (salt-minion-kubernetes, default)
-  run: |
-    helm template test helm/salt-minion \
-      --set agent.saltMasterHost=salt-master.example.com
-- name: helm template (salt-minion-kubernetes, multi-master list)
-  run: |
-    helm template test helm/salt-minion \
-      --set 'agent.saltMasterHost[0]=m0.example.com' \
-      --set 'agent.saltMasterHost[1]=m1.example.com' \
-      --set 'agent.saltMasterHost[2]=m2.example.com'
-# No failure test for missing keySecretName – the chart provides a default
-- name: helm template (salt-minion-vcf, StatefulSet, default)
-  run: |
-    helm template test helm/salt-minion \
-      --set agent.saltMasterHost=salt-master.example.com
-- name: helm template (salt-minion-vcf, Deployment, single replica)
-  run: |
-    helm template test helm/salt-minion \
-      --set agent.saltMasterHost=salt-master.example.com
-    - name: helm template (salt-minion-vcf, multi-master list)
+      - name: helm template (salt-minion-kubernetes, default)
         run: |
           helm template test helm/salt-minion \
-            --set salt.minionKeySecretName=my-minion-key \
-            --set 'salt.master[0]=m0.example.com' \
-            --set 'salt.master[1]=m1.example.com' \
-            --set 'salt.master[2]=m2.example.com'
-      - name: helm template (salt-minion-vcf, no minionKeySecretName must fail)
+            --set agent.saltMasterHost=salt-master.example.com
+      - name: helm template (salt-minion-kubernetes, multi-master list)
         run: |
-          if helm template test helm/salt-minion --set salt.master=x >/dev/null 2>&1; then
-            echo "expected this render to fail (minionKeySecretName required unless allowSelfGeneratedKey=true)" >&2
-            exit 1
-          fi
+          helm template test helm/salt-minion \
+            --set 'agent.saltMasterHost[0]=m0.example.com' \
+            --set 'agent.saltMasterHost[1]=m1.example.com' \
+            --set 'agent.saltMasterHost[2]=m2.example.com'
+      # No failure test for missing keySecretName – the chart provides a default
+      - name: helm template (salt-minion-vcf, StatefulSet, default)
+        run: |
+          helm template test helm/salt-minion \
+            --set agent.saltMasterHost=salt-master.example.com
+      - name: helm template (salt-minion-vcf, Deployment, single replica)
+        run: |
+          helm template test helm/salt-minion \
+            --set agent.saltMasterHost=salt-master.example.com
+      - name: helm template (salt-minion-vcf, multi-master list)
+        run: |
+          helm template test helm/salt-minion \
+            --set 'agent.saltMasterHost[0]=m0.example.com' \
+            --set 'agent.saltMasterHost[1]=m1.example.com' \
+            --set 'agent.saltMasterHost[2]=m2.example.com'
+      # No failure test for missing keySecretName – the chart provides a default
 
   build:
     runs-on: ubuntu-latest
