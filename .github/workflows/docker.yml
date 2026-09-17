@@ -18,11 +18,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install utilities
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq yq curl
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+- name: Install utilities
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y jq yq curl python3-pip
+            curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+- name: Install ruff
+          run: |
+            python3 -m pip install --upgrade pip
+            pip install ruff
 
       # Lint and format code (T003)
       - name: Lint and format code
