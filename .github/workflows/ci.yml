@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck src/minion/vcf/scripts/*.sh src/minion/kubernetes/scripts/*.sh
+        run: shellcheck src/minion/vcf/*.sh src/minion/kubernetes/*.sh src/master/*.sh 
 
   helm:
     runs-on: ubuntu-latest
