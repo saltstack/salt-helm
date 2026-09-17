@@ -15,15 +15,15 @@ jobs:
       COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
       IMAGE_TAG: "3008.2"
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+        - name: Checkout code
+          uses: actions/checkout@v3
 
-- name: Install utilities
+        - name: Install utilities
           run: |
             sudo apt-get update
             sudo apt-get install -y jq yq curl python3-pip
             curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
-- name: Install ruff
+        - name: Install ruff
           run: |
             python3 -m pip install --upgrade pip
             pip install ruff
@@ -37,9 +37,9 @@ jobs:
       # Helm lint (T029)
       - name: Helm lint charts
         run: |
-helm lint helm/salt-master
-            helm lint helm/salt-minion
-            helm lint helm/salt-key-operator
+  helm lint helm/salt-master
+  helm lint helm/salt-minion
+  helm lint helm/salt-key-operator
 
       # GHCR authentication test (T031)
       - name: Test GHCR authentication
