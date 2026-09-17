@@ -12,7 +12,7 @@ agent:
     # scripts/push-image-to-nodes.sh --role=master, or set repository to the
     # GHCR path to pull instead.
     repository: salt-master
-    tag: "3007.1"
+    tag: "3008.2"
     pullPolicy: IfNotPresent
 
   # 1 (default) = simplest possible setup: single master, single Service

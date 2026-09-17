@@ -1,6 +1,4 @@
 {{- if eq .Values.agent.authMode "in_cluster" }}
-
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,17 +20,14 @@ spec:
         app: salt-minion
         app.kubernetes.io/name: salt-minion
     spec:
-{{- $keySecret := .Values.agent.minion.keySecretName | default (printf "salt-minion-%s-key" .Release.Name) }}
+      {{- $keySecret := .Values.agent.minion.keySecretName | default (printf "salt-minion-%s-key" .Release.Name) }}
       serviceAccountName: {{ .Values.serviceAccount.name }}
-      {{- with .Values.agent.nodeSelector }}
+      {{- if .Values.agent.nodeSelector }}
       nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- toYaml .Values.agent.nodeSelector | nindent 8 }}
+      {{ end }}
       securityContext:
         {{- toYaml .Values.agent.podSecurityContext | nindent 8 }}
-# placeholder
-
-
       containers:
         - name: salt-minion
           image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
@@ -47,8 +42,6 @@ spec:
               {{- else }}
               value: {{ .Values.agent.saltMasterHost | quote }}
               {{- end }}
-
-
             - name: SALT_MASTER_PORT
               value: {{ .Values.agent.saltMasterPort | quote }}
             - name: SALT_PUBLISH_PORT
@@ -87,18 +80,13 @@ spec:
               value: {{ .Values.agent.vault.tokenFile | quote }}
             - name: VAULT_SDB_PROFILE
               value: {{ .Values.agent.vault.sdbProfile | quote }}
-            
           volumeMounts:
-
-
             - name: minion-keys
               mountPath: /etc/salt/pki
               readOnly: true
           securityContext:
             {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
       volumes:
-
-
         - name: minion-keys
           secret:
             secretName: {{ $keySecret }}
@@ -106,3 +94,4 @@ spec:
           configMap:
             name: {{ .Release.Name }}-minion-config
 {{- end }}
+
