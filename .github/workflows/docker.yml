@@ -37,7 +37,7 @@ jobs:
       # Helm lint (T029)
       - name: Helm lint charts
         run: |
-  helm lint helm/salt-master
+  helm lint helm/salt-master-kubernetes-kubernetes
   helm lint helm/salt-minion
   helm lint helm/salt-key-operator
 
@@ -179,7 +179,7 @@ jobs:
       # Verify Helm chart version bump (T033)
       - name: Verify Helm chart version bump
         run: |
-          CURRENT=$(yq e '.version' helm/salt-master/Chart.yaml)
+          CURRENT=$(yq e '.version' helm/salt-master-kubernetes/Chart.yaml)
           echo "Chart version is $CURRENT"
 
       # Deploy Helm charts with exponential back‑off (T034)
@@ -189,7 +189,7 @@ jobs:
           max_attempts=5
           delay=5
           attempt=0
-          until helm upgrade --install salt ./helm/salt-master --namespace salt --create-namespace; do
+          until helm upgrade --install salt ./helm/salt-master-kubernetes --namespace salt --create-namespace; do
             attempt=$((attempt + 1))
             if [ $attempt -ge $max_attempts ]; then
               echo "❌ Helm deployment failed after $attempt attempts."
