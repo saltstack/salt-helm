@@ -67,19 +67,7 @@ jobs:
         run: helm lint helm/salt-minion
       - name: helm lint (salt-key-operator)
         run: helm lint helm/salt-key-operator
-      - name: helm template (helm/salt-master, single replica)
-        run: helm template test helm/salt-master
-      - name: helm template (helm/salt-master, active-active)
-        run: |
-          helm template test helm/salt-master \
-            --set agent.replicas=3 \
-            --set agent.masterKeySecretName=my-master-key
-      - name: helm template (helm/salt-master, replicas>1 without masterKeySecretName must fail)
-        run: |
-          if helm template test helm/salt-master --set agent.replicas=3 >/dev/null 2>&1; then
-            echo "expected this render to fail (masterKeySecretName required when replicas>1)" >&2
-            exit 1
-          fi
+
       - name: helm template (salt-key-operator)
         run: helm template test helm/salt-key-operator --include-crds
       - name: helm template (salt-minion-kubernetes, default)

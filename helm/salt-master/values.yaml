@@ -28,7 +28,7 @@ agent:
   # per-process pub/sub, not something any Service type or gateway can
   # change. Also requires agent.masterKeySecretName (the chart fails fast
   # otherwise) - every replica must share the identical keypair.
-  replicas: 1
+
 
   # No numeric runAsUser/runAsGroup/fsGroup here on purpose - the image runs
   # as the 'salt' system user salt-common's own postinst creates (or this
@@ -97,7 +97,7 @@ agent:
   # (fine for dev/test, but any minion that already trusts an old keypair
   # won't trust the new one, and it can never be scaled past 1 replica
   # without setting this).
-  masterKeySecretName: "salt-master-key"
+  masterKeySecretName: ""
 
   # Replaces manual `salt-key -a <minion-id>` with salt-key-operator's
   # SaltMinionKey CRD (see ../salt-key-operator) - a ConfigMap it manages,

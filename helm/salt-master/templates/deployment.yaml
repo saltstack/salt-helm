@@ -14,7 +14,7 @@ spec:
   # (salt-master-N.salt-master-headless...) that let a
   # minion's multi-master `master:` list address each replica individually.
   # See templates/service-headless.yaml.
-  replicas: {{ .Values.agent.replicas }}
+
   selector:
     matchLabels:
       app: salt-master
@@ -138,7 +138,7 @@ spec:
       volumes:
           - name: master-keys
             secret:
-               secretName: {{ .Values.agent.masterKeySecretName | default (printf "%s-master-keys" .Release.Name) }}
+                secretName: {{ .Values.agent.masterKeySecretName | default (printf "%s-master-keys" .Release.Name) }}
 {{- if .Values.agent.trustedMinions.enabled }}
           - name: trusted-minions-src
             configMap:
