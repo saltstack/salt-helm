@@ -1,0 +1,227 @@
+# Namespace where all salt-master objects are deployed.
+namespace: salt-master
+
+agent:
+  image:
+    # Built from docker/salt-master/Dockerfile. Also published to
+    # ghcr.io/saltstack/salt-kubernetes/salt-master (see docs/releasing.md), but
+    # this default is unqualified for the push-to-node lab workflow below --
+    # push it to each node's containerd store with
+    # scripts/push-image-to-nodes.sh --role=master, or set repository to the
+    # GHCR path to pull instead.
+    repository: salt-master
+    tag: "3007.1"
+    pullPolicy: IfNotPresent
+
+  # 1 (default) = simplest possible setup: single master, single Service
+  # address, no ambiguity about which replica serves a given minion.
+  #
+  # > 1 = active-active, but ONLY genuinely so for clients that address
+  # each replica individually - the headless Service's per-ordinal DNS
+  # names in-cluster (always created, no config needed), or
+  # service.perOrdinal for external minions. A single flat Service address
+  # (service.type/service.gateway below) in front of >1 replica still only
+  # gives connection-level load-balancing + auto-failover, never "any
+  # replica can dispatch to any minion" - that's inherent to Salt's
+  # per-process pub/sub, not something any Service type or gateway can
+  # change. Also requires agent.masterKeySecretName (the chart fails fast
+  # otherwise) - every replica must share the identical keypair.
+  replicas: 1
+
+  # No numeric runAsUser/runAsGroup/fsGroup here on purpose - the image runs
+  # as the 'salt' system user salt-common's own postinst creates (or this
+  # Dockerfile creates itself for the onedir install - see
+  # docker/salt-master/Dockerfile), whose numeric uid isn't a stable
+  # constant to pin. runAsNonRoot alone still gets enforced.
+  podSecurityContext:
+    runAsNonRoot: true
+
+  # No added capabilities: when agent.jobCache.persistence.enabled mounts a
+  # PVC at /var/cache/salt/master/jobs, it comes back root-owned regardless
+  # of fsGroup, and capabilities.add can't fix that either - not every
+  # container runtime populates the *ambient* capability set for a
+  # non-root container (confirmed on this project's own test cluster:
+  # CapBnd includes CHOWN/FOWNER, CapEff/CapAmb are still empty, so the
+  # capability is granted but unusable), and even setcap-based file
+  # capabilities need allowPrivilegeEscalation: true to take effect on
+  # exec. initContainers.fixCachePerms below (runs as root, once, briefly)
+  # is the tradeoff instead: this long-running container never runs as
+  # root, ever.
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - ALL
+
+  # Only relevant when jobCache.persistence.enabled mounts a volume at
+  # /var/cache/salt/master/jobs. Reuses image.repository/tag itself (not
+  # e.g. busybox) so it can resolve 'salt' by name via that image's own
+  # /etc/passwd, rather than duplicating its numeric uid here.
+  initContainers:
+    fixCachePerms:
+      enabled: true
+
+  # Auto-accepts new minion keys instead of requiring a manual `salt-key -a`
+  # per minion (or a SaltMinionKey CR, once salt-key-operator is installed).
+  # An orthogonal, weaker "accept literally anyone" dev/test convenience -
+  # convenient for dev/test labs; leave false for a production master.
+  autoAccept: false
+
+  # Sets `id:` on the master itself. Leave empty to use the pod hostname.
+  # Does NOT need to be unique across replicas (unlike a minion ID) - a
+  # minion's trust is gated by the master's keypair (masterKeySecretName
+  # below), not by this grain, so every replica can share this value or
+  # every replica can fall back to its own pod hostname; either is fine.
+  masterId: ""
+
+  # Fires salt/presence/present (and /change) events on the event bus, so
+  # `salt-run manage.present`/`manage.status` reflect which minions are
+  # actually connected right now - useful in Kubernetes, where minion pods
+  # come and go independently of their accepted-key status.
+  presenceEvents: true
+
+  # Name of an EXISTING Kubernetes Secret (created out-of-band - e.g. by
+  # whatever generates and registers this master's identity with RaaS/the
+  # minion side before this chart is ever installed - never via Helm
+  # values) with keys 'private-key-b64' and 'public-key-b64': a
+  # base64-encoded PEM RSA keypair for the master itself. REQUIRED when
+  # replicas > 1 (every pod must present the identical keypair, matching
+  # Salt's own multi-master convention - see
+  # https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html,
+  # "masters share the same private key") - the StatefulSet template fails
+  # fast otherwise. With a single replica it's optional: leave empty to
+  # fall back to the master generating its own keypair on first start
+  # (fine for dev/test, but any minion that already trusts an old keypair
+  # won't trust the new one, and it can never be scaled past 1 replica
+  # without setting this).
+  masterKeySecretName: ""
+
+  # Replaces manual `salt-key -a <minion-id>` with salt-key-operator's
+  # SaltMinionKey CRD (see ../salt-key-operator) - a ConfigMap it manages,
+  # mounted READ-ONLY at /etc/salt/pki/master/minions. Once enabled,
+  # `salt-key -a` no longer works against this master at all (the directory
+  # it would write into is read-only) - every accepted minion must go
+  # through a SaltMinionKey instead. That's intentional: across an
+  # active-active master tier, mixing operator-managed and manually-
+  # accepted keys would mean different replicas disagreeing on who's
+  # trusted, exactly the gap salt-key-operator exists to close. Leave
+  # false to keep the traditional salt-key workflow (fine for a single
+  # replica; does NOT give consistent acceptance across replicas > 1).
+  trustedMinions:
+    enabled: false
+    # Set false to reference an existing ConfigMap (e.g. created by another
+    # tool) instead of having this chart create one.
+    createConfigMap: true
+    configMapName: salt-master-trusted-minions
+    # How often the trusted-minions-sync sidecar re-copies the ConfigMap
+    # into the writable directory Salt actually reads. Total worst-case
+    # propagation is this plus kubelet's own ConfigMap-volume resync
+    # period (on the order of a minute) - the sidecar can only see updates
+    # once kubelet has already synced the ConfigMap's mounted content.
+    syncIntervalSeconds: 15
+
+  # Once masterKeySecretName is set, the master's own identity is supplied
+  # externally on every start - there's nothing left to persist for PKI.
+  # The accepted-minion-keys list is likewise no longer local/persisted
+  # state once salt-key-operator is installed (see its own chart) - it
+  # lives in a ConfigMap the operator manages, mounted read-only into
+  # /etc/salt/pki/master/minions. What *does* still benefit from
+  # persistence is the master's job/event cache (jobs dispatched and their
+  # returns) - see jobCache below. This intentionally does NOT persist
+  # /etc/salt/pki at all anymore.
+  jobCache:
+    persistence:
+      enabled: true
+      # Empty uses the cluster's default StorageClass. No hostPath option
+      # here on purpose - each StatefulSet replica gets its own exclusive
+      # PVC via volumeClaimTemplates, and per-ordinal hostPath would need a
+      # per-ordinal nodeSelector, which a single StatefulSet template can't
+      # express.
+      storageClassName: ""
+      accessMode: ReadWriteOnce
+      size: 1Gi
+
+  # Pins every replica to a node (e.g. {kubernetes.io/hostname: k8s-cp}).
+  # Not needed for the job-cache PVC above (that's a normal StorageClass
+  # volume, one per ordinal, no node affinity required) - only relevant if
+  # your cluster needs it for other reasons.
+  # `kubectl get nodes` for hostnames.
+  nodeSelector: {}
+
+serviceAccount:
+  name: salt-master
+  # Add EKS IRSA or other provider-specific annotations here.
+  annotations: {}
+
+service:
+  # ClusterIP by default - standard practice: nothing is reachable from
+  # outside the cluster unless you explicitly opt into one of the
+  # mechanisms below. A single Service address only gives genuine
+  # multi-master fan-out at replicas: 1 - with replicas > 1 it still
+  # load-balances per-connection across all of them (auto-failover if one
+  # dies, but NOT "any replica can dispatch to any minion"; see
+  # agent.replicas' own comment above). For real fan-out with replicas > 1,
+  # in-cluster minions use the always-created headless Service's
+  # per-ordinal DNS names directly (templates/service-headless.yaml, no
+  # config needed here) - external minions need perOrdinal below.
+  type: ClusterIP
+
+  # Only used when type=NodePort - exposes the port directly on every
+  # node's own IP. Not standard practice for a production cluster (opens a
+  # host-level port on every node regardless of where the pod is actually
+  # scheduled) - prefer service.gateway below if you have a Gateway
+  # API-compatible controller (e.g. Envoy Gateway) available.
+  nodePorts:
+    publish: 30505
+    ret: 30506
+
+  # Exposes this same single Service through a Gateway API TCPRoute
+  # (gateway.networking.k8s.io) instead - e.g. Envoy Gateway, which
+  # supports raw TCP passthrough. A standard Kubernetes Ingress cannot do
+  # this at all: Ingress is HTTP(S)-only, and Salt's 4505/4506 carry raw
+  # ZeroMQ traffic, not HTTP. This does NOT create a Gateway - that's a
+  # cluster-level object your platform team manages separately, with two
+  # TCP listeners already defined (one per port) for these TCPRoutes to
+  # attach to by name.
+  gateway:
+    enabled: false
+    gatewayName: ""
+    # Defaults to this release's own namespace when empty.
+    gatewayNamespace: ""
+    publishSectionName: salt-publish
+    retSectionName: salt-ret
+
+  # One Service per StatefulSet replica ordinal (salt-master-0,
+  # -1, -2, ...) - required for EXTERNAL (non-cluster) minions to hold
+  # independent connections to every master replica simultaneously (Salt's
+  # genuine multi-master mode, not just failover - see
+  # https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html).
+  # In-cluster minions should use the headless Service's per-ordinal DNS
+  # names instead and can leave this disabled.
+  perOrdinal:
+    enabled: true
+    # ClusterIP by default too, same reasoning as the flat Service above -
+    # this still works as a gateway.enabled TCPRoute backend (see below)
+    # without needing NodePort at all. Override to NodePort or
+    # LoadBalancer for direct external exposure with no gateway involved.
+    type: ClusterIP
+    # Only used when type=NodePort. Ranges, one pair per ordinal starting
+    # here (ordinal 0 gets basePublishPort/baseRetPort, ordinal 1 gets +1,
+    # etc.) - kept distinct from nodePorts above so both can be enabled at
+    # once without clashing. The two bases must stay at least (max replica
+    # count) apart, or ordinal N's publish port collides with ordinal
+    # (N-1)'s ret port (e.g. base 31505/31506 with 2+ replicas: ordinal 1's
+    # publish=31506 clashes with ordinal 0's ret=31506) - the gap of 100
+    # below comfortably covers any realistic replica count.
+    basePublishPort: 31505
+    baseRetPort: 31605
+
+    # Same idea as service.gateway above, one TCPRoute pair per replica
+    # ordinal. Expects the Gateway to already have two listeners per
+    # ordinal, named <sectionNamePrefix>-publish-<N> / -ret-<N>.
+    gateway:
+      enabled: false
+      gatewayName: ""
+      gatewayNamespace: ""
+      sectionNamePrefix: salt-master

@@ -1,0 +1,19 @@
+{{- if and .Values.agent.trustedMinions.enabled .Values.agent.trustedMinions.createConfigMap }}
+# Deliberately renders NO `data:` key at all - salt-key-operator (see
+# ../../salt-key-operator) owns that field out-of-band, one entry per
+# trusted minion ID. Rendering `data: {}` here instead would make Helm's
+# 3-way merge re-apply an empty map on every `helm upgrade`, wiping every
+# key the operator has written. The `salt.saltstack.io/trusted-minions`
+# label is what the operator's own auto-discovery (one release per
+# namespace) looks for.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.agent.trustedMinions.configMapName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: salt-master
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    salt.saltstack.io/trusted-minions: "true"
+{{- end }}

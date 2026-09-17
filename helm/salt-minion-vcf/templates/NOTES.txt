@@ -1,0 +1,30 @@
+Salt Minion VCF has been installed.
+
+Workload:
+  {{ .Values.workload.kind }}
+
+Salt Master:
+  {{ .Values.salt.master }}:{{ .Values.salt.masterPort }}
+
+Check pods:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+Check logs:
+  kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/instance={{ .Release.Name }} --tail=100
+
+{{- if eq .Values.workload.kind "StatefulSet" }}
+
+Expected Minion IDs:
+{{- range $i := until (int .Values.workload.replicas) }}
+  {{ include "salt-minion-vcf.fullname" $ }}-{{ $i }}
+{{- end }}
+{{- else }}
+
+Expected Minion ID:
+  {{ default (include "salt-minion-vcf.fullname" .) .Values.salt.minionId }}
+{{- end }}
+
+On the Salt Master:
+  salt-key -L
+  salt-key -a '<minion-id>'
+  salt '<minion-id>' test.ping

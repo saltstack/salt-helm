@@ -1,6 +1,22 @@
 apiVersion: v2
 name: salt-key-operator
-description: Helm chart for Salt key operator
+description: >
+  Installs the SaltMinionKey CRD and its controller - the declarative
+  replacement for running `salt-key -a <minionId>` by hand against a
+  salt-master-kubernetes pod. The controller writes each SaltMinionKey's
+  public key into a ConfigMap owned by the target salt-master-kubernetes
+  release (see that chart's agent.trustedMinions.* values), mounted
+  read-only into every master replica - so acceptance stays consistent
+  across an active-active master tier without ever exec-ing into a pod or
+  needing shared writable storage between replicas.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+keywords:
+  - salt
+  - saltstack
+  - kubernetes
+  - operator
+  - crd
+maintainers:
+  - name: salt-compliance-team

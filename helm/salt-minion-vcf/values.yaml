@@ -1,0 +1,198 @@
+image:
+  repository: salt-minion-vcf
+  tag: "0.1.1"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+workload:
+  # StatefulSet is recommended because Salt Minion identity and PKI are stateful.
+  # Deployment is supported for a singleton Minion with a persistent PVC.
+  kind: StatefulSet
+  replicas: 1
+
+salt:
+  # A single address, or a list of addresses for Salt's own native
+  # multi-master mode (https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html)
+  # - the minion holds an independent, simultaneous connection to EVERY
+  # address in the list (not failover - genuine active-active fan-out).
+  # Required when pointing at an active-active salt-master-kubernetes
+  # release (agent.replicas > 1 there): use that chart's per-ordinal
+  # addresses, e.g.
+  #   master:
+  #     - salt-master-kubernetes-0.salt-master-kubernetes-headless.salt-master.svc.cluster.local
+  #     - salt-master-kubernetes-1.salt-master-kubernetes-headless.salt-master.svc.cluster.local
+  #     - salt-master-kubernetes-2.salt-master-kubernetes-headless.salt-master.svc.cluster.local
+  master: salt-master.example.com
+  masterPort: 4506
+  publishPort: 4505
+  masterFinger: ""
+  logLevel: info
+
+  # StatefulSet:
+  # Leave empty to use the stable Pod name (e.g. release-salt-minion-vcf-0).
+  #
+  # Deployment:
+  # Leave empty to use the stable Helm resource name.
+  #
+  # When minionKeySecretName is set (see below), this MUST match the minion
+  # ID that was already registered as trusted for that keypair (e.g. the
+  # minionId vcf-ops-onboard.py received back from POST /api/salt/minions) -
+  # VCF Operations, not this chart, is the source of truth for that ID.
+  minionId: ""
+
+  # Name of an EXISTING Kubernetes Secret (created out-of-band, e.g. by
+  # vcf-ops-onboard.py, never via Helm values) with keys 'private-key-b64'
+  # and 'public-key-b64' - a base64-encoded PEM RSA keypair for the minion
+  # itself. REQUIRED for a StatefulSet workload (the chart fails fast
+  # otherwise - see allowSelfGeneratedKey below for the escape hatch): the
+  # minion's public key must already be registered as trusted (VCF
+  # Operations, or a SaltMinionKey - see ../../salt-key-operator) *before*
+  # the minion starts, so the minion must be handed that exact keypair
+  # rather than generating its own, which the trust store would never have
+  # been told about. With persistence.enabled=false (the default now - see
+  # below), a self-generated key also wouldn't even survive a pod restart.
+  minionKeySecretName: ""
+
+  # Explicit opt-out of the minionKeySecretName requirement above, for
+  # workload.kind=StatefulSet - falls back to the minion generating its own
+  # keypair on first start. Only makes sense combined with
+  # persistence.enabled=true (otherwise a fresh keypair, and a fresh
+  # unaccepted minion, appears on every pod restart). Named explicitly
+  # rather than just leaving minionKeySecretName empty, so choosing this
+  # legacy behavior is a deliberate, visible decision in your values file.
+  allowSelfGeneratedKey: false
+
+  masterTries: -1
+  retryDns: 30
+
+  # Allow more time for minions to authenticate against the master before
+  # timing out and retrying - reduces "thundering herd" retry storms when
+  # many minions (re)connect at once, e.g. right after a master restart.
+  # Matches Salt's own default, set explicitly so it's documented here.
+  authTimeout: 60
+
+  # Proactively checks the TCP connection to the master every N seconds and
+  # reconnects if it's gone stale. Disabled (0) by default in Salt itself -
+  # without this, a minion sitting on a dead/rescheduled master's connection
+  # only notices at the next job dispatch attempt.
+  masterAliveInterval: 60
+
+  # ZeroMQ transport reconnect backoff: attempts start at reconDefault ms and
+  # back off up to reconMax ms; reconRandomize jitters the actual delay so
+  # many minions reconnecting at once (e.g. after a master restart) don't
+  # all retry in lockstep - Salt's own documented fix for reconnect
+  # thundering herds.
+  reconDefault: 1000
+  reconMax: 5000
+  reconRandomize: true
+
+  extraMinionConfig: {}
+  # Example:
+  # extraMinionConfig:
+  #   verify_master_pubkey_sign: true
+
+  # Opt-in: makes ALL pillar compiles (including jobs dispatched from a real
+  # Salt Master) resolve from this Pod's own pillar_roots instead of asking
+  # the Master. Unverified beyond basic testing - see README.md
+  # "Vault Integration" before relying on this for production RaaS jobs.
+  fileClientLocal: false
+
+vault:
+  # Vault integration (saltext.vault) - disabled unless addr is set.
+  addr: ""
+  authMethod: approle
+  roleId: ""
+  sdbProfile: vault_sdb
+  # Name of an EXISTING Secret (created out-of-band, never via Helm values)
+  # containing the AppRole secret_id as key 'secret_id', or a Vault token as
+  # key 'token' (matching authMethod). Leave empty to disable.
+  secretName: ""
+
+# Disabled by default: once minionKeySecretName is set (the standard path
+# now), the minion's identity is supplied externally on every start, so
+# there's nothing generated-then-persisted left to protect - the minion is
+# fully stateless. Set enabled: true only alongside
+# salt.allowSelfGeneratedKey: true, to give a self-generated keypair
+# somewhere to survive across pod restarts.
+persistence:
+  enabled: false
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 256Mi
+  annotations: {}
+
+pillar:
+  # Name of an EXISTING Kubernetes Secret (created out-of-band, never via
+  # Helm values) containing saltext.vcf credentials. Must include a top.sls
+  # key alongside e.g. vcenter.sls - see pillar/*.sls.example and
+  # pillar/master-top.sls.example in this repo for the exact format. Leave
+  # empty to disable. To update without restarting the Pod, update the
+  # Secret object itself - kubelet re-syncs mounted Secret volumes
+  # automatically.
+  secretName: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# No numeric runAsUser/runAsGroup/fsGroup here on purpose - the image runs
+# as the 'salt' system user salt-common's own postinst creates, whose
+# numeric uid isn't a stable constant to pin. runAsNonRoot alone still gets
+# enforced (Kubernetes checks whatever user the image resolves to).
+podSecurityContext:
+  runAsNonRoot: true
+
+# No added capabilities: every volume type (PVC or emptyDir) mounts
+# /etc/salt/pki/minion back root-owned regardless of fsGroup, and
+# capabilities.add can't fix that either - not every container runtime
+# populates the *ambient* capability set for a non-root container
+# (confirmed on this project's own test cluster: CapBnd includes
+# CHOWN/FOWNER, CapEff/CapAmb are still empty, so the capability is
+# granted but unusable), and even setcap-based file capabilities need
+# allowPrivilegeEscalation: true to take effect on exec. The initContainer
+# below (runs as root, once, briefly) is the tradeoff instead: this
+# long-running container never runs as root, ever.
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
+
+# One-time root step (never the long-running minion) that chowns the pki
+# volume to the 'salt' user - see containerSecurityContext comment above
+# for why this needs to be root rather than a capability grant on the main
+# container. Reuses image.repository/tag itself (not e.g. busybox) so it
+# can resolve 'salt' by name via that image's own /etc/passwd, rather than
+# duplicating its numeric uid here.
+initContainers:
+  fixPkiPerms:
+    enabled: true
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 20
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 20
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podLabels: {}
+
+terminationGracePeriodSeconds: 30

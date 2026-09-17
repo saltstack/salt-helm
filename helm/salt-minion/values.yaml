@@ -1,10 +1,206 @@
-image:
-  repository: ghcr.io/your-repo/salt-minion
-  tag: "3008.2"
-resources:
-  requests:
-    cpu: "150m"
-    memory: "192Mi"
-  limits:
-    cpu: "500m"
-    memory: "1Gi"
+# Namespace where all salt-minion objects are deployed.
+# Must match the namespace used in kube-bench-job.
+namespace: salt
+
+agent:
+  # Deployment mode:
+  #   in_cluster — deploy the Salt minion as a Kubernetes Deployment (default)
+  #   external   — create RBAC only; the minion runs outside the cluster
+  authMode: in_cluster
+
+  # No numeric runAsUser/runAsGroup/fsGroup here on purpose - the image runs
+  # as the 'salt' system user salt-common's own postinst creates, whose
+  # numeric uid isn't a stable constant to pin. runAsNonRoot alone still
+  # gets enforced (Kubernetes checks whatever user the image resolves to).
+  podSecurityContext:
+    runAsNonRoot: true
+
+  # No added capabilities: when agent.persistence.enabled mounts a
+  # PVC/hostPath at /etc/salt/pki, it comes back root-owned regardless of
+  # fsGroup, and capabilities.add can't fix that either - not every
+  # container runtime populates the *ambient* capability set for a
+  # non-root container (confirmed on this project's own test cluster:
+  # CapBnd includes CHOWN/FOWNER, CapEff/CapAmb are still empty, so the
+  # capability is granted but unusable), and even setcap-based file
+  # capabilities need allowPrivilegeEscalation: true to take effect on
+  # exec. initContainers.fixPkiPerms below (runs as root, once, briefly)
+  # is the tradeoff instead: this long-running container never runs as
+  # root, ever.
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - ALL
+
+  # Only relevant when persistence.enabled mounts a volume at /etc/salt/pki.
+  # Reuses image.repository/tag itself (not e.g. busybox) so it can resolve
+  # 'salt' by name via that image's own /etc/passwd, rather than
+  # duplicating its numeric uid here.
+  initContainers:
+    fixPkiPerms:
+      enabled: true
+
+  # ── in_cluster mode settings ──────────────────────────────────────────────
+  image:
+    # Published by this repo (see ../docs/releasing.md and CHANGELOG.md for
+    # exactly which Salt/extension versions this tag carries) - preloaded
+    # with saltext.vault and saltext.kubernetes on top of core Salt. Point
+    # this at a plain saltstack/salt image instead if you don't need either
+    # extension.
+    repository: ghcr.io/saltstack/salt-kubernetes/salt-minion
+    tag: "0.1.1"
+    pullPolicy: IfNotPresent
+  kubectl:
+    # Set to false only when agent.image is NOT this chart's own
+    # salt-minion image (e.g. plain saltstack/salt) - true skips
+    # the install-kubectl init container entirely, since this image already
+    # bundles kubectl at build time (see Dockerfile).
+    bundled: true
+    # Pinned kubectl version downloaded by the init container. Only used
+    # when kubectl.bundled is false.
+    version: "v1.30.2"
+    # Image used in the init container to run curl. Only used when
+    # kubectl.bundled is false.
+    initImage: "curlimages/curl:8.7.1"
+  # Sets SALT_LOG_LEVEL / `log_level:` on the minion.
+  logLevel: info
+  replicas: 1
+  # Salt master address. Required when authMode=in_cluster. Also accepts a
+  # list, for Salt's native multi-master mode
+  # (https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html) -
+  # one independent, simultaneous connection per address, not failover.
+  # Point this at every replica address of an active-active
+  # salt-master-kubernetes release instead of a single master, e.g.:
+  #   saltMasterHost:
+  #     - salt-master-kubernetes-0.salt-master-kubernetes-headless.salt-master.svc.cluster.local
+  #     - salt-master-kubernetes-1.salt-master-kubernetes-headless.salt-master.svc.cluster.local
+  #     - salt-master-kubernetes-2.salt-master-kubernetes-headless.salt-master.svc.cluster.local
+  saltMasterHost: ""
+  # "ret" channel (master_port). Override alongside saltPublishPort whenever
+  # the master isn't reachable on its default ports as-is -- e.g. behind a
+  # Kubernetes NodePort Service, where both ports get remapped.
+  saltMasterPort: 4506
+  # "publish" channel (publish_port).
+  saltPublishPort: 4505
+
+  # Allow more time for minions to authenticate against the master before
+  # timing out and retrying - reduces "thundering herd" retry storms when
+  # many minions (re)connect at once, e.g. right after a master restart.
+  # Matches Salt's own default, set explicitly so it's documented here.
+  authTimeout: 60
+
+  # Proactively checks the TCP connection to the master every N seconds and
+  # reconnects if it's gone stale. Disabled (0) by default in Salt itself -
+  # without this, a minion sitting on a dead/rescheduled master's connection
+  # only notices at the next job dispatch attempt.
+  masterAliveInterval: 60
+
+  # ZeroMQ transport reconnect backoff: attempts start at reconDefault ms
+  # and back off up to reconMax ms; reconRandomize jitters the actual delay
+  # so many minions reconnecting at once (e.g. after a master restart)
+  # don't all retry in lockstep - Salt's own documented fix for reconnect
+  # thundering herds.
+  reconDefault: 1000
+  reconMax: 5000
+  reconRandomize: true
+
+  minion:
+    # Salt minion ID. Leave empty to use the pod hostname.
+    id: ""
+    # Additional grains injected via the minion config ConfigMap.
+    grains: {}
+
+    # Name of an EXISTING Kubernetes Secret (created out-of-band, never via
+    # Helm values) with keys 'private-key-b64' and 'public-key-b64' - a
+    # base64-encoded PEM RSA keypair for the minion itself. REQUIRED (the
+    # chart fails fast otherwise - see allowSelfGeneratedKey below for the
+    # escape hatch): the minion's public key must already be registered as
+    # trusted (e.g. via salt-key-operator's SaltMinionKey - see
+    # ../../salt-key-operator) *before* the minion starts, so it must be
+    # handed that exact keypair rather than generating its own, which the
+    # trust store would never have been told about. With
+    # agent.persistence.enabled=false (the default), a self-generated key
+    # also wouldn't even survive a pod restart.
+    keySecretName: ""
+
+    # Explicit opt-out of the keySecretName requirement above - falls back
+    # to the minion generating its own keypair on first start. Only makes
+    # sense combined with agent.persistence.enabled=true (otherwise a fresh
+    # keypair, and a fresh unaccepted minion, appears on every pod
+    # restart). Named explicitly rather than just leaving keySecretName
+    # empty, so choosing this legacy behavior is a deliberate, visible
+    # decision in your values file.
+    allowSelfGeneratedKey: false
+
+  # Optional Vault integration (saltext.vault, baked into this chart's
+  # default image) - lets pillar values reference sdb://vault_sdb/<path>:<key>
+  # instead of plaintext. All optional; disabled unless addr is set. Prefer
+  # secretIdFile/tokenFile (a mounted Secret) over secretId/token (plain
+  # values, visible in `kubectl get pod -o yaml`).
+  vault:
+    addr: ""
+    authMethod: approle
+    roleId: ""
+    secretId: ""
+    secretIdFile: ""
+    token: ""
+    tokenFile: ""
+    sdbProfile: vault_sdb
+
+  # Persists the minion's generated keypair (/etc/salt/pki) across pod
+  # restarts. Without this, a fresh keypair is generated every time the
+  # pod restarts (the directory only exists in the container's writable
+  # layer), and the salt-master rejects it as a mismatch against whatever
+  # key it already has on file for this same minion ID -- requiring a
+  # manual `salt-key -d`/`-a` cycle every time.
+  persistence:
+    enabled: false
+    # "pvc" (default; use when the cluster has a StorageClass, e.g. real
+    # customer clusters) or "hostPath" (for clusters with no dynamic
+    # provisioner, e.g. bare kubeadm test labs -- ties the data to
+    # whichever node it's written on, so pair it with nodeSelector below).
+    type: pvc
+    pvc:
+      # Set to reuse an existing PVC instead of having this chart create one.
+      existingClaim: ""
+      # Empty uses the cluster's default StorageClass.
+      storageClassName: ""
+      accessMode: ReadWriteOnce
+      size: 1Gi
+    hostPath:
+      path: /var/lib/salt-minion/pki
+
+  # Only relevant when persistence.type=hostPath: pins the pod to the node
+  # whose disk holds the persisted keypair, e.g. {kubernetes.io/hostname: k8s-cp}.
+  # `kubectl get nodes` for hostnames.
+  nodeSelector: {}
+
+serviceAccount:
+  name: salt-minion
+  # Add EKS IRSA or other provider-specific annotations here.
+  annotations: {}
+
+rbac:
+  # Set to false if you manage RBAC externally.
+  create: true
+  roleName: salt-minion
+
+# kube-bench coordination settings — must match kube-bench-job chart values.
+kubeBench:
+  namespace: salt
+  # Must match cronJob.name in the kube-bench-job chart.
+  cronJobName: kube-bench
+  # Label applied to assessment Jobs and their pods for tracking.
+  jobLabel: app=kube-bench-assessment
+
+# Pillar values injected into the salt-minion-pillar ConfigMap.
+# The ConfigMap is mounted as /srv/pillar/kube_bench.sls inside the minion pod.
+# External minions can also point pillar_roots at a copy of this ConfigMap via a
+# hostPath or projected volume.
+pillar:
+  ttlSeconds: 900
+  jobTimeout: 600
+  collectionStrategy: job
+  authMode: in_cluster
+  cachePath: /var/log/kube-bench.json
