@@ -4,13 +4,13 @@ namespace: salt-master
 agent:
   image:
     # Built from docker/salt-master/Dockerfile. Also published to
-    # ghcr.io/saltstack/salt-helm/salt-master (see docs/releasing.md), but
+    # ghcr.io/saltstack/salt-kubernetes/salt-master (see docs/releasing.md), but
     # this default is unqualified for the push-to-node lab workflow below --
     # push it to each node's containerd store with
     # scripts/push-image-to-nodes.sh --role=master, or set repository to the
     # GHCR path to pull instead.
     repository: salt-master
-    tag: "3007.1"
+    tag: "3008.2"
     pullPolicy: IfNotPresent
 
   # 1 (default) = simplest possible setup: single master, single Service

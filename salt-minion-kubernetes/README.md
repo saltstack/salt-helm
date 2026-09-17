@@ -72,7 +72,7 @@ The following table lists the most commonly overridden values. See
 | --- | --- | --- |
 | `namespace` | Namespace for all chart resources. Must match `kube-bench-job`'s namespace. | `salt` |
 | `agent.authMode` | `in_cluster` or `external`. | `in_cluster` |
-| `agent.image.repository` | Salt minion image repository. | `ghcr.io/saltstack/salt-helm/salt-minion-kubernetes` |
+| `agent.image.repository` | Salt minion image repository. | `ghcr.io/saltstack/salt-kubernetes/salt-minion-kubernetes` |
 | `agent.image.tag` | Salt minion image tag. | `0.1.1` |
 | `agent.kubectl.bundled` | Skip the install-kubectl init container — true when `agent.image` already bundles `kubectl` (the default image does). | `true` |
 | `agent.saltMasterHost` | Salt master address. Required for `in_cluster` mode. Also accepts a list, for Salt's native [multi-master mode](https://docs.saltproject.io/en/3006/topics/tutorials/multimaster.html) against an active-active `salt-master-kubernetes` release. | `""` |

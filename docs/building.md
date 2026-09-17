@@ -91,5 +91,5 @@ helm package salt-minion-vcf/helm/salt-minion-vcf
 ## Cutting an actual release
 
 Building locally doesn't publish anything. To push a build to
-`ghcr.io/saltstack/salt-helm/...` under a real version tag, see
+`ghcr.io/saltstack/salt-kubernetes/...` under a real version tag, see
 [`docs/releasing.md`](releasing.md).

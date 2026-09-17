@@ -5,11 +5,15 @@
 # image doesn't need any Salt extensions (execution/state modules run on
 # minions, not the master) or kubectl (the master never talks to a cluster
 # API directly), so it skips both.
-FROM debian:12-slim
+FROM ubuntu:24.04
 
 # Pinned rather than "latest" so a given salt-master-image release tag
 # reproducibly carries one specific Salt version - see CHANGELOG.md.
 ARG SALT_VERSION=3008.2
+
+LABEL org.opencontainers.image.title="Salt Master"
+LABEL org.opencontainers.image.description="Salt Master runtime for VCF Salt"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # ca-certificates/curl are OS packages that should track the latest security
 # patches from the base image's own release channel rather than being frozen
@@ -19,6 +23,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        gnupg \
+        tini \
+        iproute2 \
+        dnsutils \
+        netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Salt's official bootstrap script, install type "onedir": fetches the same
@@ -65,4 +74,9 @@ RUN id salt >/dev/null 2>&1 || useradd --system --uid 999 --no-create-home --she
 
 USER 999:999
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD ["/usr/bin/tini", "--", "salt-master", "-d"]
+
+VOLUME ["/etc/salt/pki/master"]
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]

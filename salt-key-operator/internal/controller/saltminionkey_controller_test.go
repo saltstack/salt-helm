@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	saltv1alpha1 "github.com/saltstack/salt-helm/salt-key-operator/api/v1alpha1"
+	saltv1alpha1 "github.com/saltstack/salt-kubernetes/salt-key-operator/api/v1alpha1"
 )
 
 const testPubKeyPEM = "-----BEGIN PUBLIC KEY-----\nfake\n-----END PUBLIC KEY-----\n"

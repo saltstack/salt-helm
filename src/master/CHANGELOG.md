@@ -7,5 +7,5 @@ assuming.
 
 ## salt-master-image/v1.0.0
 - Salt: 3008.2
-- Base: debian:12-slim
+- Base: ubuntu:24.04
 - Install method: salt-bootstrap (onedir)

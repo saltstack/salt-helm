@@ -1,6 +1,6 @@
 # Release Preparation Checklist
 
-Use this guide to prepare a new release of the `salt-helm` charts and container images.
+Use this guide to prepare a new release of the `salt-kubernetes` charts and container images.
 
 ## 1. Version bump
 - Update `Chart.yaml` in each chart directory (`salt-master-kubernetes`, `salt-minion-kubernetes`, `salt-minion-vcf/helm/salt-minion-vcf`).
@@ -11,8 +11,8 @@ Use this guide to prepare a new release of the `salt-helm` charts and container 
 ```bash
 # Example for the master image
 docker build -t salt-master:1.2.3 docker/salt-master
-docker tag salt-master:1.2.3 ghcr.io/saltstack/salt-helm/salt-master:1.2.3
-docker push ghcr.io/saltstack/salt-helm/salt-master:1.2.3
+docker tag salt-master:1.2.3 ghcr.io/saltstack/salt-kubernetes/salt-master:1.2.3
+docker push ghcr.io/saltstack/salt-kubernetes/salt-master:1.2.3
 ```
 Repeat for `salt-minion-kubernetes` and `salt-minion-vcf`.
 

@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	saltv1alpha1 "github.com/saltstack/salt-helm/salt-key-operator/api/v1alpha1"
+	saltv1alpha1 "github.com/saltstack/salt-kubernetes/salt-key-operator/api/v1alpha1"
 )
 
 // SaltMinionKeyReconciler reconciles a SaltMinionKey object.

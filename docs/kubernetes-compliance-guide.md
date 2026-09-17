@@ -69,7 +69,7 @@ the full build-arg reference for each image.
 ### 1c. Get the images onto your cluster
 
 Already published, independently of this build step — see
-[`docs/releasing.md`](releasing.md) for the exact `ghcr.io/saltstack/salt-helm/...`
+[`docs/releasing.md`](releasing.md) for the exact `ghcr.io/saltstack/salt-kubernetes/...`
 paths — so most of the time step 1 is only needed to build a local/patched
 variant. If you do need to move a locally-built image onto your cluster
 yourself:

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: salt-minion
+description: Helm chart for Salt minion
+type: application
+version: 0.1.0
+appVersion: "3008.2"

@@ -48,8 +48,8 @@ agent:
     # with saltext.vault and saltext.kubernetes on top of core Salt. Point
     # this at a plain saltstack/salt image instead if you don't need either
     # extension.
-    repository: ghcr.io/saltstack/salt-helm/salt-minion-kubernetes
-    tag: "0.1.1"
+    repository: ghcr.io/saltstack/salt-kubernetes/salt-minion-kubernetes
+    tag: "3008.2"
     pullPolicy: IfNotPresent
   kubectl:
     # Set to false only when agent.image is NOT this chart's own

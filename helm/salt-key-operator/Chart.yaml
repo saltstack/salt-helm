@@ -1,0 +1,6 @@
+apiVersion: v2
+name: salt-key-operator
+description: Helm chart for Salt key operator
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

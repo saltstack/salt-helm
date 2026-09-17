@@ -12,7 +12,11 @@ description: >
   no saltext.kubernetes install, since the master never calls the
   Kubernetes API itself -- see docker/salt-master/README.md.
 type: application
-version: 1.0.0
+version: 1.0.1
+dependencies:
+  - name: salt-key-operator
+    version: "0.1.0"
+    repository: "file://../salt-key-operator/helm/salt-key-operator"
 appVersion: "1.0.0"
 keywords:
   - salt

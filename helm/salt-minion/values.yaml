@@ -1,0 +1,10 @@
+image:
+  repository: ghcr.io/your-repo/salt-minion
+  tag: "3008.2"
+resources:
+  requests:
+    cpu: "150m"
+    memory: "192Mi"
+  limits:
+    cpu: "500m"
+    memory: "1Gi"

@@ -5,7 +5,7 @@ there is no single repo-wide release tag. Each component is released by
 pushing a tag scoped to that component; only that component's workflow
 fires.
 
-All artifacts publish to GHCR under `ghcr.io/saltstack/salt-helm/...`
+All artifacts publish to GHCR under `ghcr.io/saltstack/salt-kubernetes/...`
 (GitHub Container Registry — public, no extra credentials to set up, and
 already the pattern this project used before it moved into this monorepo).
 
@@ -20,10 +20,10 @@ assuming.
 
 | Component | Tag to push | Publishes to | Changelog |
 | --- | --- | --- | --- |
-| `docker/salt-master` | `salt-master-image/vX.Y.Z` | `ghcr.io/saltstack/salt-helm/salt-master:X.Y.Z` (and `:latest`) | [`docker/salt-master/CHANGELOG.md`](../docker/salt-master/CHANGELOG.md) |
-| `salt-minion-vcf` | `salt-minion-vcf-image/vX.Y.Z` | `ghcr.io/saltstack/salt-helm/salt-minion-vcf:X.Y.Z` (and `:latest`) | [`salt-minion-vcf/CHANGELOG.md`](../salt-minion-vcf/CHANGELOG.md) |
-| `salt-minion-kubernetes` | `salt-minion-kubernetes-image/vX.Y.Z` | `ghcr.io/saltstack/salt-helm/salt-minion-kubernetes:X.Y.Z` (and `:latest`) | [`salt-minion-kubernetes/CHANGELOG.md`](../salt-minion-kubernetes/CHANGELOG.md) |
-| `salt-key-operator` | `salt-key-operator-image/vX.Y.Z` | `ghcr.io/saltstack/salt-helm/salt-key-operator:X.Y.Z` (and `:latest`) | [`salt-key-operator/CHANGELOG.md`](../salt-key-operator/CHANGELOG.md) |
+| `docker/salt-master` | `salt-master-image/vX.Y.Z` | `ghcr.io/saltstack/salt-kubernetes/salt-master:X.Y.Z` (and `:latest`) | [`docker/salt-master/CHANGELOG.md`](../docker/salt-master/CHANGELOG.md) |
+| `salt-minion-vcf` | `salt-minion-vcf-image/vX.Y.Z` | `ghcr.io/saltstack/salt-kubernetes/salt-minion-vcf:X.Y.Z` (and `:latest`) | [`salt-minion-vcf/CHANGELOG.md`](../salt-minion-vcf/CHANGELOG.md) |
+| `salt-minion-kubernetes` | `salt-minion-kubernetes-image/vX.Y.Z` | `ghcr.io/saltstack/salt-kubernetes/salt-minion-kubernetes:X.Y.Z` (and `:latest`) | [`salt-minion-kubernetes/CHANGELOG.md`](../salt-minion-kubernetes/CHANGELOG.md) |
+| `salt-key-operator` | `salt-key-operator-image/vX.Y.Z` | `ghcr.io/saltstack/salt-kubernetes/salt-key-operator:X.Y.Z` (and `:latest`) | [`salt-key-operator/CHANGELOG.md`](../salt-key-operator/CHANGELOG.md) |
 
 Each release workflow refuses to publish unless the tag's version already
 has a matching heading in that component's `CHANGELOG.md` — add the entry
@@ -47,10 +47,10 @@ pushing anything.
 
 | Component | Tag to push | Publishes to | Changelog |
 | --- | --- | --- | --- |
-| `salt-master-kubernetes` | `salt-master-kubernetes-chart/vX.Y.Z` | `oci://ghcr.io/saltstack/salt-helm/charts/salt-master-kubernetes:X.Y.Z` | [`salt-master-kubernetes/CHANGELOG.md`](../salt-master-kubernetes/CHANGELOG.md) |
-| `salt-minion-kubernetes` | `salt-minion-kubernetes-chart/vX.Y.Z` | `oci://ghcr.io/saltstack/salt-helm/charts/salt-minion-kubernetes:X.Y.Z` | [`salt-minion-kubernetes/CHANGELOG.md`](../salt-minion-kubernetes/CHANGELOG.md) |
-| `salt-minion-vcf` (chart) | `salt-minion-vcf-chart/vX.Y.Z` | `oci://ghcr.io/saltstack/salt-helm/charts/salt-minion-vcf:X.Y.Z` | [`salt-minion-vcf/helm/salt-minion-vcf/CHANGELOG.md`](../salt-minion-vcf/helm/salt-minion-vcf/CHANGELOG.md) |
-| `salt-key-operator` (chart) | `salt-key-operator-chart/vX.Y.Z` | `oci://ghcr.io/saltstack/salt-helm/charts/salt-key-operator:X.Y.Z` | [`salt-key-operator/helm/salt-key-operator/CHANGELOG.md`](../salt-key-operator/helm/salt-key-operator/CHANGELOG.md) |
+| `salt-master-kubernetes` | `salt-master-kubernetes-chart/vX.Y.Z` | `oci://ghcr.io/saltstack/salt-kubernetes/charts/salt-master-kubernetes:X.Y.Z` | [`salt-master-kubernetes/CHANGELOG.md`](../salt-master-kubernetes/CHANGELOG.md) |
+| `salt-minion-kubernetes` | `salt-minion-kubernetes-chart/vX.Y.Z` | `oci://ghcr.io/saltstack/salt-kubernetes/charts/salt-minion-kubernetes:X.Y.Z` | [`salt-minion-kubernetes/CHANGELOG.md`](../salt-minion-kubernetes/CHANGELOG.md) |
+| `salt-minion-vcf` (chart) | `salt-minion-vcf-chart/vX.Y.Z` | `oci://ghcr.io/saltstack/salt-kubernetes/charts/salt-minion-vcf:X.Y.Z` | [`salt-minion-vcf/helm/salt-minion-vcf/CHANGELOG.md`](../salt-minion-vcf/helm/salt-minion-vcf/CHANGELOG.md) |
+| `salt-key-operator` (chart) | `salt-key-operator-chart/vX.Y.Z` | `oci://ghcr.io/saltstack/salt-kubernetes/charts/salt-key-operator:X.Y.Z` | [`salt-key-operator/helm/salt-key-operator/CHANGELOG.md`](../salt-key-operator/helm/salt-key-operator/CHANGELOG.md) |
 
 ```bash
 # 1. Bump version: in the chart's Chart.yaml.
@@ -65,7 +65,7 @@ Installing a published chart:
 
 ```bash
 helm install salt-master-kubernetes \
-  oci://ghcr.io/saltstack/salt-helm/charts/salt-master-kubernetes \
+  oci://ghcr.io/saltstack/salt-kubernetes/charts/salt-master-kubernetes \
   --version 1.0.0 \
   -f my-values.yaml
 ```

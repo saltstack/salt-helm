@@ -1,0 +1,10 @@
+apiVersion: v2
+name: salt-master-kubernetes
+description: Helm chart for Salt master
+type: application
+version: 0.1.0
+appVersion: "3008.2"
+dependencies:
+  - name: salt-key-operator
+    version: "0.1.0"
+    repository: file://../salt-key-operator

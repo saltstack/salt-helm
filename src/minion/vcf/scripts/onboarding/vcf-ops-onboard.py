@@ -65,7 +65,7 @@ Only three dependencies: Python 3.8+, `openssl` (minion keypair generation),
 and whichever of `docker`/`helm`+`kubectl` you're deploying with. No
 third-party pip packages required.
 
-Reference: https://github.com/saltstack/salt-helm/tree/main/salt-minion-vcf
+Reference: https://github.com/saltstack/salt-kubernetes/tree/main/salt-minion-vcf
 """
 
 from __future__ import annotations
