@@ -61,8 +61,8 @@ jobs:
         run: helm lint salt-master-kubernetes
       - name: helm lint (salt-minion-kubernetes)
         run: helm lint helm/salt-minion
-      # - name: helm lint (salt-minion-vcf)
-        run: helm lint salt-minion-vcf/helm/salt-minion-vcf
+        # - name: helm lint (salt-minion-vcf) (removed)
+          # run: helm lint salt-minion-vcf/helm/salt-minion-vcf
       - name: helm lint (salt-key-operator)
         run: helm lint salt-key-operator/helm/salt-key-operator
       - name: helm template (salt-master-kubernetes, single replica)
@@ -105,27 +105,27 @@ jobs:
             echo "expected this render to fail (agent.minion.keySecretName required unless allowSelfGeneratedKey=true)" >&2
             exit 1
           fi
-      - name: helm template (salt-minion-vcf, StatefulSet, default)
-        run: |
+        # - name: helm template (salt-minion-vcf, StatefulSet, default) (removed)
+        # run: |
           helm template test salt-minion-vcf/helm/salt-minion-vcf \
             --set salt.master=salt-master.example.com \
             --set salt.minionKeySecretName=my-minion-key
-      - name: helm template (salt-minion-vcf, Deployment, single replica)
-        run: |
+        # - name: helm template (salt-minion-vcf, Deployment, single replica) (removed)
+        # run: |
           helm template test salt-minion-vcf/helm/salt-minion-vcf \
             --set salt.master=salt-master.example.com \
             --set salt.minionKeySecretName=my-minion-key \
             --set workload.kind=Deployment \
             --set workload.replicas=1
-      - name: helm template (salt-minion-vcf, multi-master list)
-        run: |
+        # - name: helm template (salt-minion-vcf, multi-master list) (removed)
+        # run: |
           helm template test salt-minion-vcf/helm/salt-minion-vcf \
             --set salt.minionKeySecretName=my-minion-key \
             --set 'salt.master[0]=m0.example.com' \
             --set 'salt.master[1]=m1.example.com' \
             --set 'salt.master[2]=m2.example.com'
-      - name: helm template (salt-minion-vcf, no minionKeySecretName must fail)
-        run: |
+        # - name: helm template (salt-minion-vcf, no minionKeySecretName must fail) (removed)
+        # run: |
           if helm template test salt-minion-vcf/helm/salt-minion-vcf --set salt.master=x >/dev/null 2>&1; then
             echo "expected this render to fail (minionKeySecretName required unless allowSelfGeneratedKey=true)" >&2
             exit 1

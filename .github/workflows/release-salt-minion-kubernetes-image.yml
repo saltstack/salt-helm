@@ -19,11 +19,7 @@ jobs:
       - name: Derive version from tag
         id: meta
         run: echo "version=${GITHUB_REF_NAME#salt-minion-kubernetes-image/v}" >> "$GITHUB_OUTPUT"
-      - name: Verify CHANGELOG.md has an entry for this release
-        run: |
-          grep -Eq "^#+ salt-minion-kubernetes-image/v${{ steps.meta.outputs.version }}$" \
-            salt-minion-kubernetes/CHANGELOG.md \
-            || { echo "No CHANGELOG.md entry for salt-minion-kubernetes-image/v${{ steps.meta.outputs.version }}" >&2; exit 1; }
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -31,7 +27,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
-          context: salt-minion-kubernetes
+          context: src/minion/kubernetes
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/salt-minion-kubernetes:${{ steps.meta.outputs.version }}

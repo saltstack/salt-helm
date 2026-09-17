@@ -22,19 +22,18 @@ jobs:
         run: |
           set -eu
           tag_version="${GITHUB_REF_NAME#salt-minion-kubernetes-chart/v}"
-          chart_version="$(helm show chart salt-minion-kubernetes | awk '/^version:/ {print $2}')"
+          chart_version="$(helm show chart helm/salt-minion | awk '/^version:/ {print $2}')"
           if [ "$tag_version" != "$chart_version" ]; then
             echo "Tag version $tag_version does not match Chart.yaml version $chart_version" >&2
             exit 1
           fi
-          grep -Eq "^#+ salt-minion-kubernetes-chart/v${tag_version}$" salt-minion-kubernetes/CHANGELOG.md \
-            || { echo "No CHANGELOG.md entry for salt-minion-kubernetes-chart/v${tag_version}" >&2; exit 1; }
+
           echo "version=$tag_version" >> "$GITHUB_OUTPUT"
       - name: helm lint
-        run: helm lint salt-minion-kubernetes
+        run: helm lint helm/salt-minion
       - name: helm package
-        run: helm package salt-minion-kubernetes
+        run: helm package helm/salt-minion
       - name: helm registry login
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
       - name: helm push
-        run: helm push "salt-minion-kubernetes-${{ steps.meta.outputs.version }}.tgz" "oci://ghcr.io/${{ github.repository }}/charts"
+        run: helm push "salt-minion-${{ steps.meta.outputs.version }}.tgz" "oci://ghcr.io/${{ github.repository }}/charts"

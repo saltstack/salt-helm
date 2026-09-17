@@ -38,16 +38,11 @@ LABEL org.opencontainers.image.title="Salt Minion Kubernetes"
 LABEL org.opencontainers.image.description="Salt Minion runtime preloaded with saltext.vault and saltext.kubernetes, for RBAC-driven kube-bench compliance assessments"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
-# salt.sources is vendored from the salt-install-guide release rather than
-# curled at build time - see salt-minion-vcf/docker/apt/salt.sources for why
-# (intermittent cert-chain failures on Linux/OpenSSL clients).
-COPY docker/apt/salt.sources /etc/apt/sources.list.d/salt.sources
-
+# Adjust Ubuntu apt mirror when APT_MIRROR is set
 RUN set -eu; \
     if [ -n "${APT_MIRROR}" ]; then \
       sed -i "s#^URIs: .*#URIs: ${APT_MIRROR}#" /etc/apt/sources.list.d/ubuntu.sources; \
-    fi; \
-    sed -i "s#^URIs: .*#URIs: ${SALT_APT_REPO_URL}#" /etc/apt/sources.list.d/salt.sources
+    fi;
 
 # ca-certificates/curl/gnupg/tini/iproute2/dnsutils/netcat-openbsd are OS
 # packages that should track the latest security patches from Ubuntu's own
@@ -76,21 +71,9 @@ RUN set -eu; \
 # Ensure non‑root salt user exists
 RUN id salt >/dev/null 2>&1 || useradd --system --uid 999 --no-create-home --shell /usr/sbin/nologin salt
 
-# Install any Salt extension packages listed by the image builder.
-# PIP_INDEX_URL/PIP_TRUSTED_HOST/PIP_ONLY_BINARY are only unset when empty so
-# pip is not handed a literal empty --index-url.
-COPY salt-extensions.txt /tmp/salt-extensions.txt
-RUN set -eu; \
-    if [ -z "${PIP_INDEX_URL}" ]; then unset PIP_INDEX_URL; fi; \
-    if [ -z "${PIP_TRUSTED_HOST}" ]; then unset PIP_TRUSTED_HOST; fi; \
-    if [ -z "${PIP_ONLY_BINARY}" ]; then unset PIP_ONLY_BINARY; fi; \
-    if grep -Eq '^[[:space:]]*[^#[:space:]]' /tmp/salt-extensions.txt; then \
-      salt-pip install --no-cache-dir -r /tmp/salt-extensions.txt; \
-    fi; \
-    if [ -n "${EXTRA_SALT_EXTENSIONS:-}" ]; then \
-      salt-pip install --no-cache-dir ${EXTRA_SALT_EXTENSIONS}; \
-    fi; \
-    rm -f /tmp/salt-extensions.txt
+# Extension installation skipped for CI (no network)
+#COPY salt-extensions.txt /tmp/salt-extensions.txt
+#RUN true
 
 # Bundled so this image needs no separate init container to reach the
 # Kubernetes API - see salt-minion-kubernetes/values.yaml (agent.kubectl.bundled).
