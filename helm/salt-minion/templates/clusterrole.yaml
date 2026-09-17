@@ -7,6 +7,12 @@ metadata:
     app.kubernetes.io/name: salt-minion
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+{{- if .Values.rbac.fullAccess }}
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+{{- else }}
 rules:
   # nodes is cluster-scoped -- a namespaced Role/RoleBinding (see role.yaml)
   # is never consulted for cluster-scoped resources, regardless of its
@@ -15,4 +21,6 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list"]
+{{ toYaml .Values.rbac.customClusterRoleRules | nindent 2 }}
+{{- end }}
 {{- end }}

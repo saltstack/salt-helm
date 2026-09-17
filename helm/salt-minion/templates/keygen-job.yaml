@@ -1,0 +1,39 @@
+{{- $secretName := .Values.agent.minion.keySecretName | default (printf "%s-keys" .Release.Name) -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-keygen
+  namespace: {{ .Values.namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      restartPolicy: OnFailure
+      containers:
+        - name: keygen
+          image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              set -e
+
+              # Exit if secret already exists
+              if kubectl get secret {{ $secretName }} -n {{ .Values.namespace }} >/dev/null 2>&1; then
+                echo "Secret {{ $secretName }} already exists, skipping generation"
+                exit 0
+              fi
+              # Generate RSA keypair
+              TMPDIR=$(mktemp -d)
+              openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out $TMPDIR/private.pem
+              openssl rsa -pubout -in $TMPDIR/private.pem -out $TMPDIR/public.pem
+              PRIVATE_B64=$(base64 -w0 $TMPDIR/private.pem)
+              PUBLIC_B64=$(base64 -w0 $TMPDIR/public.pem)
+              # Create secret with the generated keys
+              # Create secret with PEM files as secret data (Kubernetes will base64‑encode them)
+              kubectl create secret generic {{ $secretName }} -n {{ .Values.namespace }} \
+                --from-file=minion.pem=$TMPDIR/private.pem \
+                --from-file=minion.pub=$TMPDIR/public.pem

@@ -49,20 +49,9 @@ agent:
     # this at a plain saltstack/salt image instead if you don't need either
     # extension.
     repository: ghcr.io/saltstack/salt-kubernetes/salt-minion
-    tag: "0.1.1"
+    tag: "3008.2"
     pullPolicy: IfNotPresent
-  kubectl:
-    # Set to false only when agent.image is NOT this chart's own
-    # salt-minion image (e.g. plain saltstack/salt) - true skips
-    # the install-kubectl init container entirely, since this image already
-    # bundles kubectl at build time (see Dockerfile).
-    bundled: true
-    # Pinned kubectl version downloaded by the init container. Only used
-    # when kubectl.bundled is false.
-    version: "v1.30.2"
-    # Image used in the init container to run curl. Only used when
-    # kubectl.bundled is false.
-    initImage: "curlimages/curl:8.7.1"
+
   # Sets SALT_LOG_LEVEL / `log_level:` on the minion.
   logLevel: info
   replicas: 1
@@ -108,8 +97,12 @@ agent:
   minion:
     # Salt minion ID. Leave empty to use the pod hostname.
     id: ""
+    masterId: ""
+    masterPubKeyB64: ""
     # Additional grains injected via the minion config ConfigMap.
     grains: {}
+    privateKeyB64: ""
+    publicKeyB64: ""
 
     # Name of an EXISTING Kubernetes Secret (created out-of-band, never via
     # Helm values) with keys 'private-key-b64' and 'public-key-b64' - a
@@ -185,22 +178,11 @@ rbac:
   # Set to false if you manage RBAC externally.
   create: true
   roleName: salt-minion
+  # When true (default) the minion gets full cluster admin rights.
+  # Set to false and provide custom rules below to restrict permissions.
+  fullAccess: true
+  # Optional custom rules for the namespaced Role (list of rule objects). Ignored if fullAccess is true.
+  customRoleRules: []
+  # Optional custom rules for the ClusterRole (list of rule objects). Ignored if fullAccess is true.
+  customClusterRoleRules: []
 
-# kube-bench coordination settings — must match kube-bench-job chart values.
-kubeBench:
-  namespace: salt
-  # Must match cronJob.name in the kube-bench-job chart.
-  cronJobName: kube-bench
-  # Label applied to assessment Jobs and their pods for tracking.
-  jobLabel: app=kube-bench-assessment
-
-# Pillar values injected into the salt-minion-pillar ConfigMap.
-# The ConfigMap is mounted as /srv/pillar/kube_bench.sls inside the minion pod.
-# External minions can also point pillar_roots at a copy of this ConfigMap via a
-# hostPath or projected volume.
-pillar:
-  ttlSeconds: 900
-  jobTimeout: 600
-  collectionStrategy: job
-  authMode: in_cluster
-  cachePath: /var/log/kube-bench.json

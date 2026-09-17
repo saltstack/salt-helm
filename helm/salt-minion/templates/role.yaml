@@ -8,17 +8,13 @@ metadata:
     app.kubernetes.io/name: salt-minion
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+{{- if .Values.rbac.fullAccess }}
 rules:
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["create", "get", "watch", "delete", "list", "patch"]
-  - apiGroups: ["batch"]
-    resources: ["cronjobs"]
-    verbs: ["get"]
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list"]
-  - apiGroups: [""]
-    resources: ["pods/log"]
-    verbs: ["get"]
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+{{- else }}
+rules:
+{{ toYaml .Values.rbac.customRoleRules | nindent 2 }}
+{{- end }}
 {{- end }}

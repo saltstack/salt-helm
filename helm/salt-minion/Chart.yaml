@@ -6,8 +6,8 @@ description: >
   Supports two modes: in-cluster (Salt minion runs as a pod) and
   external (RBAC only; minion runs outside the cluster).
 type: application
-version: 1.0.0
-appVersion: "1.0.0"
+version: 3008.2.0
+appVersion: "3008.2"
 keywords:
   - salt
   - saltstack

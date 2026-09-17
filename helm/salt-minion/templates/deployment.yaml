@@ -1,10 +1,6 @@
 {{- if eq .Values.agent.authMode "in_cluster" }}
-{{- if and .Values.agent.persistence.enabled (eq .Values.agent.persistence.type "hostPath") (not .Values.agent.nodeSelector) }}
-{{- fail "agent.persistence.type=hostPath requires agent.nodeSelector to pin the pod to the node holding the persisted /etc/salt/pki data" }}
-{{- end }}
-{{- if and (not .Values.agent.minion.keySecretName) (not .Values.agent.minion.allowSelfGeneratedKey) }}
-{{- fail "agent.minion.keySecretName is required (or set agent.minion.allowSelfGeneratedKey=true to explicitly opt out) - without a pre-seeded keypair, the minion generates its own on every start with no persistent volume to survive a restart (agent.persistence.enabled defaults to false), and its public key was never registered as trusted anywhere." }}
-{{- end }}
+
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,6 +22,7 @@ spec:
         app: salt-minion
         app.kubernetes.io/name: salt-minion
     spec:
+{{- $keySecret := .Values.agent.minion.keySecretName | default (printf "%s-keys" .Release.Name) }}
       serviceAccountName: {{ .Values.serviceAccount.name }}
       {{- with .Values.agent.nodeSelector }}
       nodeSelector:
@@ -33,43 +30,8 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.agent.podSecurityContext | nindent 8 }}
-      {{- $needFixPkiPerms := and .Values.agent.persistence.enabled .Values.agent.initContainers.fixPkiPerms.enabled }}
-      {{- if or (not .Values.agent.kubectl.bundled) $needFixPkiPerms }}
-      initContainers:
-        {{- if not .Values.agent.kubectl.bundled }}
-        - name: install-kubectl
-          image: {{ .Values.agent.kubectl.initImage }}
-          # curlimages/curl's own image sets USER curl_user (a name, not a
-          # number) - Kubernetes' runAsNonRoot check (inherited from
-          # agent.podSecurityContext above) can't resolve that without
-          # executing code inside the image, and refuses to start the
-          # container at all ("cannot verify user is non-root") unless
-          # overridden here with the actual numeric uid/gid.
-          securityContext:
-            runAsUser: 100
-            runAsGroup: 101
-          command:
-            - sh
-            - -c
-            - |
-              curl -fsSL "https://dl.k8s.io/release/{{ .Values.agent.kubectl.version }}/bin/linux/amd64/kubectl" \
-                -o /tools/kubectl && chmod +x /tools/kubectl
-          volumeMounts:
-            - name: tools
-              mountPath: /tools
-        {{- end }}
-        {{- if $needFixPkiPerms }}
-        - name: fix-pki-perms
-          image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
-          command: ["chown", "-R", "salt:salt", "/etc/salt/pki"]
-          securityContext:
-            runAsUser: 0
-            runAsNonRoot: false
-          volumeMounts:
-            - name: pki
-              mountPath: /etc/salt/pki
-        {{- end }}
-      {{- end }}
+      
+
       containers:
         - name: salt-minion
           image: {{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}
@@ -84,18 +46,8 @@ spec:
               {{- else }}
               value: {{ .Values.agent.saltMasterHost | quote }}
               {{- end }}
-            {{- if .Values.agent.minion.keySecretName }}
-            - name: SALT_MINION_PRIVATE_KEY_B64
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.agent.minion.keySecretName }}
-                  key: private-key-b64
-            - name: SALT_MINION_PUBLIC_KEY_B64
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.agent.minion.keySecretName }}
-                  key: public-key-b64
-            {{- end }}
+
+
             - name: SALT_MASTER_PORT
               value: {{ .Values.agent.saltMasterPort | quote }}
             - name: SALT_PUBLISH_PORT
@@ -115,7 +67,7 @@ spec:
               value: {{ .Values.agent.minion.id | quote }}
             {{- end }}
             - name: SALT_LOG_LEVEL
-              value: {{ .Values.agent.logLevel | quote }}
+              value: {{ default "info" .Values.agent.logLevel | quote }}
             # Vault integration (saltext.vault) - all optional, disabled
             # unless VAULT_ADDR is set. See values.yaml agent.vault.
             - name: VAULT_ADDR
@@ -134,41 +86,22 @@ spec:
               value: {{ .Values.agent.vault.tokenFile | quote }}
             - name: VAULT_SDB_PROFILE
               value: {{ .Values.agent.vault.sdbProfile | quote }}
-            {{- if not .Values.agent.kubectl.bundled }}
-            - name: PATH
-              value: "/opt/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-            {{- end }}
+            
           volumeMounts:
-            - name: pillar
-              mountPath: /srv/pillar
-              readOnly: true
-            {{- if not .Values.agent.kubectl.bundled }}
-            - name: tools
-              mountPath: /opt/tools
-            {{- end }}
-            {{- if .Values.agent.persistence.enabled }}
-            - name: pki
+
+
+            - name: minion-keys
               mountPath: /etc/salt/pki
-            {{- end }}
+              readOnly: true
           securityContext:
             {{- toYaml .Values.agent.containerSecurityContext | nindent 12 }}
       volumes:
-        - name: pillar
+
+
+        - name: minion-keys
+          secret:
+            secretName: {{ $keySecret }}
+        - name: minion-config
           configMap:
-            name: salt-minion-pillar
-        {{- if not .Values.agent.kubectl.bundled }}
-        - name: tools
-          emptyDir: {}
-        {{- end }}
-        {{- if .Values.agent.persistence.enabled }}
-        - name: pki
-          {{- if eq .Values.agent.persistence.type "hostPath" }}
-          hostPath:
-            path: {{ .Values.agent.persistence.hostPath.path }}
-            type: DirectoryOrCreate
-          {{- else }}
-          persistentVolumeClaim:
-            claimName: {{ .Values.agent.persistence.pvc.existingClaim | default "salt-minion-pki" }}
-          {{- end }}
-        {{- end }}
+            name: {{ .Release.Name }}-minion-config
 {{- end }}
