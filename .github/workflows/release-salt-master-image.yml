@@ -1,1 +1,39 @@
----
+name: release (salt-master image)
+
+# Tag scheme: salt-master-image/vX.Y.Z -- publishes only the salt-master
+# image at version X.Y.Z, independent of the repo's other images/charts.
+# See docs/releasing.md.
+on:
+  push:
+    tags:
+      - "salt-master-image/v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Derive version from tag
+        id: meta
+        run: echo "version=${GITHUB_REF_NAME#salt-master-image/v}" >> "$GITHUB_OUTPUT"
+      - name: Verify CHANGELOG.md has an entry for this release
+        run: |
+          grep -Eq "^#+ salt-master-image/v${{ steps.meta.outputs.version }}$" \
+            src/master/CHANGELOG.md \
+            || { echo "No CHANGELOG.md entry for salt-master-image/v${{ steps.meta.outputs.version }}" >&2; exit 1; }
+      - uses: docker/build-push-action@v6
+        with:
+          context: src/master
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/salt-master:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository }}/salt-master:latest
