@@ -21,4 +21,4 @@ saltext.vcf==1.0.0
 # A Salt extension for out-of-band management of bare-metal servers via their 
 # BMC (Baseboard Management Controller). Speaks Redfish first and IPMI as a 
 # fallback (auto-detected by default),
-saltext.bmc==1.0.0
+saltext.bmc==0.0.1
