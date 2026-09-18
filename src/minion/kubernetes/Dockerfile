@@ -34,7 +34,7 @@ ARG APT_MIRROR=""
 ARG SALT_GPG_KEY_URL="https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public"
 ARG SALT_APT_REPO_URL="https://packages.broadcom.com/artifactory/saltproject-deb"
 
-LABEL org.opencontainers.image.title="Salt Minion Kubernetes"
+LABEL org.opencontainers.image.title="Salt Minion"
 LABEL org.opencontainers.image.description="Salt Minion runtime preloaded with saltext.vault and saltext.kubernetes, for RBAC-driven kube-bench compliance assessments"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
@@ -71,9 +71,24 @@ RUN set -eu; \
 # Ensure non‑root salt user exists
 RUN id salt >/dev/null 2>&1 || useradd --system --uid 999 --no-create-home --shell /usr/sbin/nologin salt
 
-# Extension installation skipped for CI (no network)
-#COPY salt-extensions.txt /tmp/salt-extensions.txt
-#RUN true
+# Copy the requirements file into the image
+COPY salt-extensions.txt /tmp/salt-extensions.txt
+
+# hadolint ignore=DL3013
+RUN set -eu; \
+    pip_opts=""; \
+    if [ -n "${PIP_INDEX_URL}" ]; then pip_opts="${pip_opts} --index-url ${PIP_INDEX_URL}"; fi; \
+    if [ -n "${PIP_TRUSTED_HOST}" ]; then pip_opts="${pip_opts} --trusted-host ${PIP_TRUSTED_HOST}"; fi; \
+    if [ -n "${PIP_ONLY_BINARY}" ]; then pip_opts="${pip_opts} --only-binary ${PIP_ONLY_BINARY}"; fi; \
+    \
+    echo "Installing extensions from salt-extensions.txt using salt-pip..."; \
+    salt-pip install --no-cache-dir ${pip_opts} -r /tmp/salt-extensions.txt; \
+    \
+    if [ -n "${EXTRA_SALT_EXTENSIONS}" ]; then \
+        echo "Installing additional runtime extensions..."; \
+        salt-pip install --no-cache-dir ${pip_opts} ${EXTRA_SALT_EXTENSIONS}; \
+    fi; \
+    rm -f /tmp/salt-extensions.txt
 
 # Bundled so this image needs no separate init container to reach the
 # Kubernetes API - see salt-minion-kubernetes/values.yaml (agent.kubectl.bundled).
@@ -90,14 +105,14 @@ RUN if [ "$INCLUDE_KUBECTL" = "true" ]; then \
         rm -f /tmp/kubectl.sha256 /tmp/kubectl.sha256.check; \
     fi
 
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # Non-root: run as the 'salt' system user/group salt-common's own postinst
 # already created (rather than inventing a separate one), and own
 # everything the minion writes to at runtime. This image only calls the
 # Kubernetes API via its mounted ServiceAccount token, so it never needs
 # root inside the container.
-RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh \
+RUN chmod 0755 /usr/local/bin/entrypoint.sh \
     && mkdir -p /etc/salt/minion.d /etc/salt/pki/minion /etc/salt/pillar \
                 /var/cache/salt/minion /var/log/salt \
     && chown -R salt:salt /etc/salt /var/cache/salt /var/log/salt
@@ -134,4 +149,4 @@ VOLUME ["/etc/salt/pki/minion"]
 #HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
 #  CMD ["/usr/local/bin/healthcheck.sh"]
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]

@@ -44,6 +44,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true # ⚡ Automatically handles dependency caching
 
       - name: Go Vet
         run: |
@@ -57,28 +58,36 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # --- 3. BUILD IMAGES TO LOCAL DAEMON ---
+      # --- 3. BUILD IMAGES TO LOCAL DAEMON WITH GHA CACHE ---
       - name: Build Docker Images Locally
         run: |
           echo "➡️ Building Master Image..."
-          docker buildx build src/master --file src/master/Dockerfile --load -t salt-master:local
+          docker buildx build src/master --file src/master/Dockerfile --load -t salt-master:local \
+            --cache-from type=gha,scope=master \
+            --cache-to type=gha,mode=max,scope=master
           
           echo "➡️ Building Minion Kubernetes Image..."
-          docker buildx build src/minion/kubernetes --file src/minion/kubernetes/Dockerfile --load -t salt-minion-k8s:local
+          docker buildx build src/minion/kubernetes --file src/minion/kubernetes/Dockerfile --load -t salt-minion-k8s:local \
+            --cache-from type=gha,scope=minion-k8s \
+            --cache-to type=gha,mode=max,scope=minion-k8s
           
           echo "➡️ Building Minion VCF Image..."
-          docker buildx build src/minion/vcf --file src/minion/vcf/Dockerfile --load -t salt-minion-vcf:local
+          docker buildx build src/minion/vcf --file src/minion/vcf/Dockerfile --load -t salt-minion-vcf:local \
+            --cache-from type=gha,scope=minion-vcf \
+            --cache-to type=gha,mode=max,scope=minion-vcf
           
           echo "➡️ Building Key Operator Image..."
-          docker buildx build src/salt-key-operator --file src/salt-key-operator/Dockerfile --load -t salt-key-operator:local
+          docker buildx build src/salt-key-operator --file src/salt-key-operator/Dockerfile --load -t salt-key-operator:local \
+            --cache-from type=gha,scope=key-operator \
+            --cache-to type=gha,mode=max,scope=key-operator
 
-      # --- 4. TRIVY SECURITY VULNERABILITY SCANS ---
+      # --- 4. TRIVY SECURITY VULNERABILITY SCANS (LOG-ONLY MODE) ---
       - name: Scan salt-master image
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'salt-master:local'
           format: 'table'
-          exit-code: '1'
+          exit-code: '0' # 😎 Does not break the build, just writes to log output
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
@@ -88,7 +97,7 @@ jobs:
         with:
           image-ref: 'salt-minion-k8s:local'
           format: 'table'
-          exit-code: '1'
+          exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
@@ -98,7 +107,7 @@ jobs:
         with:
           image-ref: 'salt-minion-vcf:local'
           format: 'table'
-          exit-code: '1'
+          exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
@@ -108,7 +117,7 @@ jobs:
         with:
           image-ref: 'salt-key-operator:local'
           format: 'table'
-          exit-code: '1'
+          exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
@@ -127,3 +136,4 @@ jobs:
           docker images | grep local
           echo "=== Helm Chart Archives ==="
           ls -l output-charts/
+

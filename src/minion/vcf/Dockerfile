@@ -1,7 +1,21 @@
+# syntax=docker/dockerfile:1
+#
+# Self-contained Salt minion image for salt-minion-kubernetes: core Salt plus
+# saltext.vault and saltext.kubernetes, both pip-installed from PyPI (same
+# pattern as salt-minion-vcf/Dockerfile) rather than requiring a checkout of
+# any extension's own repo as build context.
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
+# Pinned rather than "latest" so a given salt-minion-kubernetes-image release
+# tag reproducibly carries one specific Salt version - see CHANGELOG.md.
 ARG SALT_VERSION=3008.2
+
+# Bundles kubectl directly into the image so the salt-minion-kubernetes chart
+# can skip its install-kubectl init container (agent.kubectl.bundled: true).
+ARG INCLUDE_KUBECTL=true
+ARG KUBECTL_VERSION=v1.30.2
+ARG TARGETARCH
 
 # Optional additional extension packages, space-separated.
 # Prefer salt-extensions.txt for reproducible builds.
@@ -57,18 +71,48 @@ RUN set -eu; \
 # Ensure non‑root salt user exists
 RUN id salt >/dev/null 2>&1 || useradd --system --uid 999 --no-create-home --shell /usr/sbin/nologin salt
 
-# Extension installation skipped for CI (no network)
-#COPY salt-extensions.txt /tmp/salt-extensions.txt
-#RUN true
+# Copy the requirements file into the image
+COPY salt-extensions.txt /tmp/salt-extensions.txt
 
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# hadolint ignore=DL3013
+RUN set -eu; \
+    pip_opts=""; \
+    if [ -n "${PIP_INDEX_URL}" ]; then pip_opts="${pip_opts} --index-url ${PIP_INDEX_URL}"; fi; \
+    if [ -n "${PIP_TRUSTED_HOST}" ]; then pip_opts="${pip_opts} --trusted-host ${PIP_TRUSTED_HOST}"; fi; \
+    if [ -n "${PIP_ONLY_BINARY}" ]; then pip_opts="${pip_opts} --only-binary ${PIP_ONLY_BINARY}"; fi; \
+    \
+    echo "Installing extensions from salt-extensions.txt using salt-pip..."; \
+    salt-pip install --no-cache-dir ${pip_opts} -r /tmp/salt-extensions.txt; \
+    \
+    if [ -n "${EXTRA_SALT_EXTENSIONS}" ]; then \
+        echo "Installing additional runtime extensions..."; \
+        salt-pip install --no-cache-dir ${pip_opts} ${EXTRA_SALT_EXTENSIONS}; \
+    fi; \
+    rm -f /tmp/salt-extensions.txt
+
+# Bundled so this image needs no separate init container to reach the
+# Kubernetes API - see salt-minion-kubernetes/values.yaml (agent.kubectl.bundled).
+RUN if [ "$INCLUDE_KUBECTL" = "true" ]; then \
+        set -eu; \
+        curl -fsSL -o /usr/local/bin/kubectl \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl"; \
+        curl -fsSL -o /tmp/kubectl.sha256 \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl.sha256"; \
+        printf '%s  /usr/local/bin/kubectl\n' "$(cat /tmp/kubectl.sha256)" \
+            > /tmp/kubectl.sha256.check; \
+        sha256sum -c /tmp/kubectl.sha256.check; \
+        chmod +x /usr/local/bin/kubectl; \
+        rm -f /tmp/kubectl.sha256 /tmp/kubectl.sha256.check; \
+    fi
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # Non-root: run as the 'salt' system user/group salt-common's own postinst
 # already created (rather than inventing a separate one), and own
-# everything the minion writes to at runtime. saltext-vcf makes remote API
-# calls against vCenter/NSX/SDDC-M/Ops rather than managing local host
-# state, so the minion never needs root inside the container.
-RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh  \
+# everything the minion writes to at runtime. This image only calls the
+# Kubernetes API via its mounted ServiceAccount token, so it never needs
+# root inside the container.
+RUN chmod 0755 /usr/local/bin/entrypoint.sh \
     && mkdir -p /etc/salt/minion.d /etc/salt/pki/minion /etc/salt/pillar \
                 /var/cache/salt/minion /var/log/salt \
     && chown -R salt:salt /etc/salt /var/cache/salt /var/log/salt
@@ -81,12 +125,8 @@ ENV SALT_MASTER="" \
     SALT_PUBLISH_PORT="4505" \
     SALT_MASTER_PUBKEY_B64="" \
     SALT_MINION_ID="" \
-    SALT_MINION_ID_PREFIX="vcf-salt-executor" \
-    SALT_MINION_PRIVATE_KEY_B64="" \
-    SALT_MINION_PUBLIC_KEY_B64="" \
     SALT_MASTER_FINGER="" \
     SALT_LOG_LEVEL="info" \
-    SALT_FILE_CLIENT_LOCAL="false" \
     VAULT_ADDR="" \
     VAULT_AUTH_METHOD="approle" \
     VAULT_ROLE_ID="" \
@@ -106,4 +146,7 @@ USER 999:999
 
 VOLUME ["/etc/salt/pki/minion"]
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+#HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+#  CMD ["/usr/local/bin/healthcheck.sh"]
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
