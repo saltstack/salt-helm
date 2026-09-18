@@ -50,7 +50,7 @@ jobs:
       - name: Build Container Image Locally
         uses: docker/build-push-action@v6
         with:
-          context: ./salt-key-operator
+          context: src/salt-key-operator
           load: true
           platforms: linux/amd64
           tags: |
@@ -68,7 +68,7 @@ jobs:
       - name: Push Safe Container Image to GHCR
         uses: docker/build-push-action@v6
         with:
-          context: ./salt-key-operator
+          context: src/salt-key-operator
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
