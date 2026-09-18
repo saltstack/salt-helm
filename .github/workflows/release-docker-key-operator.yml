@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: actions/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v3
 
       - name: Extract Dynamic Version Metadata
         id: vars
@@ -53,7 +53,7 @@ jobs:
             ${{ steps.vars.outputs.image_ref }}:${{ steps.vars.outputs.version }}
 
       - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: "${{ steps.vars.outputs.image_ref }}:${{ steps.vars.outputs.version }}"
           format: 'table'

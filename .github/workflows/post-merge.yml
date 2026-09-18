@@ -91,6 +91,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
+          trivyignore: '.trivyignore'
 
       - name: Scan salt-minion-k8s image
         uses: aquasecurity/trivy-action@master
@@ -101,6 +102,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
+          trivyignore: '.trivyignore'
 
       - name: Scan salt-minion-vcf image
         uses: aquasecurity/trivy-action@master
@@ -111,6 +113,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
+          trivyignore: '.trivyignore'
 
       - name: Scan salt-key-operator image
         uses: aquasecurity/trivy-action@master
