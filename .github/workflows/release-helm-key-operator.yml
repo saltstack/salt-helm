@@ -68,7 +68,7 @@ jobs:
             Automated Helm Chart release for **Salt Key Operator**.
             Install with:
             ```bash
-            helm pull oci://ghcr.io/\({{ steps.vars.outputs.registry_owner }}/salt-key-operator --version\){{ steps.vars.outputs.version }}
+            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/salt-key-operator --version ${{ steps.vars.outputs.version }}
             ```
           draft: false
           prerelease: false

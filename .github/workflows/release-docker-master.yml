@@ -25,24 +25,24 @@ jobs:
       - name: Extract Dynamic Version Metadata
         id: vars
         run: |
-          if [[ "\${{ github.ref }}" == refs/tags/* ]]; then
-            TAG_NAME=\${GITHUB_REF#refs/tags/}
-            VERSION=\${TAG_NAME#master-v}
-            echo "is_tag=true" >> \$GITHUB_OUTPUT
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            VERSION=${TAG_NAME#master-v}
+            echo "is_tag=true" >> $GITHUB_OUTPUT
           else
             VERSION="latest"
-            echo "is_tag=false" >> \$GITHUB_OUTPUT
+            echo "is_tag=false" >> $GITHUB_OUTPUT
           fi
-          echo "version=VERSION" >> GITHUB_OUTPUT
-          IMAGE_REF="ghcr.io/\${{ github.repository_owner }}/salt-master"
-          echo "image_ref=\({IMAGE_REF,,}" >> \)GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          IMAGE_REF="ghcr.io/${{ github.repository_owner }}/salt-master"
+          echo "image_ref=${IMAGE_REF,,}" >> $GITHUB_OUTPUT
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: \${{ github.actor }}
-          password: \${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Container Image Locally
         uses: docker/build-push-action@v6
@@ -50,12 +50,12 @@ jobs:
           context: ./master
           load: true
           tags: |
-            \({{ steps.vars.outputs.image_ref }}:\){{ steps.vars.outputs.version }}
+            ${{ steps.vars.outputs.image_ref }}:${{ steps.vars.outputs.version }}
 
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: "\({{ steps.vars.outputs.image_ref }}:\){{ steps.vars.outputs.version }}"
+          image-ref: "${{ steps.vars.outputs.image_ref }}:${{ steps.vars.outputs.version }}"
           format: 'table'
           exit-code: '0' # Log-only mode
           ignore-unfixed: true
@@ -67,14 +67,15 @@ jobs:
           context: ./master
           push: true
           tags: |
-            \${{ steps.vars.outputs.image_ref }}:\({{ steps.vars.outputs.version }}\){{ steps.vars.outputs.image_ref }}:latest
+            ${{ steps.vars.outputs.image_ref }}:${{ steps.vars.outputs.version }}
+            ${{ steps.vars.outputs.image_ref }}:latest
 
       - name: Create GitHub Release
         if: steps.vars.outputs.is_tag == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: \${{ github.ref_name }}
-          name: "Salt Master Docker Release v\${{ steps.vars.outputs.version }}"
+          tag_name: ${{ github.ref_name }}
+          name: "Salt Master Docker Release v${{ steps.vars.outputs.version }}"
           body: |
             Automated Docker release for **Salt Master**.
             Available at: `ghcr.io/${{ github.repository_owner }}/salt-master:${{ steps.vars.outputs.version }}`

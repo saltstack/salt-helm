@@ -68,7 +68,7 @@ jobs:
             Automated Helm Chart release for **Salt Minion**.
             Install with:
             ```bash
-            helm pull oci://ghcr.io/\({{ steps.vars.outputs.registry_owner }}/salt-minion --version\){{ steps.vars.outputs.version }}
+            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/salt-minion --version ${{ steps.vars.outputs.version }}
             ```
           draft: false
           prerelease: false

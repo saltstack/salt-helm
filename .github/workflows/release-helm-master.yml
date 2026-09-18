@@ -68,7 +68,7 @@ jobs:
             Automated Helm Chart release for **Salt Master**.
             Install with:
             ```bash
-            helm pull oci://ghcr.io/\({{ steps.vars.outputs.registry_owner }}/salt-master --version\){{ steps.vars.outputs.version }}
+            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/salt-master --version ${{ steps.vars.outputs.version }}
             ```
           draft: false
           prerelease: false
