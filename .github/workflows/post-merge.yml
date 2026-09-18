@@ -83,7 +83,7 @@ jobs:
 
       # --- 4. TRIVY SECURITY VULNERABILITY SCANS (LOG-ONLY MODE) ---
       - name: Scan salt-master image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: 'salt-master:local'
           format: 'table'
@@ -91,9 +91,10 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
+          trivyignore: '.trivyignore'
 
       - name: Scan salt-minion-k8s image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: 'salt-minion-k8s:local'
           format: 'table'
@@ -101,9 +102,10 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
+          trivyignore: '.trivyignore'
 
       - name: Scan salt-minion-vcf image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: 'salt-minion-vcf:local'
           format: 'table'
@@ -111,9 +113,10 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
+          trivyignore: '.trivyignore'
 
       - name: Scan salt-key-operator image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: 'salt-key-operator:local'
           format: 'table'

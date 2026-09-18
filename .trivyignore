@@ -1,0 +1,4 @@
+# Ignore example RSA private key documentation in Salt state files
+# Rule ID: private-key
+*salt/states/file.py
+*salt/states/__pycache__/file.cpython*.pyc
