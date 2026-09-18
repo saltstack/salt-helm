@@ -47,12 +47,12 @@ jobs:
 
       - name: Inject Chart Version
         run: |
-          sed -i "s/^version:.*/version: ${{ steps.vars.outputs.version }}/g" ./charts/salt-minion/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.vars.outputs.version }}\"/g" ./charts/salt-minion/Chart.yaml
+          sed -i "s/^version:.*/version: ${{ steps.vars.outputs.version }}/g" helm/salt-minion/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.vars.outputs.version }}\"/g" helm/salt-minion/Chart.yaml
 
       - name: Package Helm Chart
         run: |
-          helm package ./charts/salt-minion --destination .dist
+          helm package helm/salt-minion --destination .dist
 
       - name: Push Helm Chart OCI Artifact to GHCR
         run: |
