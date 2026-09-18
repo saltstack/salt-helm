@@ -55,9 +55,9 @@ jobs:
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: '\({{ steps.vars.outputs.image_ref }}:\){{ steps.vars.outputs.version }}'
+          image-ref: "\({{ steps.vars.outputs.image_ref }}:\){{ steps.vars.outputs.version }}"
           format: 'table'
-          exit-code: '0'
+          exit-code: '0' # Log-only mode
           ignore-unfixed: true
           severity: 'HIGH,CRITICAL'
 

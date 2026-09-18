@@ -1,4 +1,4 @@
-iname: Release Helm - Salt Minion
+name: Release Helm - Salt Minion
 
 on:
   push:
