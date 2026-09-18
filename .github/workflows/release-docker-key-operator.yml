@@ -3,7 +3,7 @@ name: Release Docker - Salt Key Operator
 on:
   push:
     tags:
-      - 'operator-v*'
+      - 'salt-key-operator-v*'
   schedule:
     - cron: '0 5 * * 1' # Every Monday at 5:00 AM UTC
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
-            VERSION=${TAG_NAME#operator-v}
+            VERSION=${TAG_NAME#salt-key-operator-v}
             echo "is_tag=true" >> $GITHUB_OUTPUT
           else
             VERSION="latest"
