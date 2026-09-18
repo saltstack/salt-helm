@@ -3,7 +3,7 @@ name: Release Helm - Salt Key Operator
 on:
   push:
     tags:
-      - 'chart-operator-v*'
+      - 'chart-salt-key-operator-v*'
   schedule:
     - cron: '0 8 * * 1'
   workflow_dispatch:

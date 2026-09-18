@@ -3,7 +3,7 @@ name: Release Helm - Salt Master
 on:
   push:
     tags:
-      - 'chart-master-v*'
+      - 'chart-salt-master-v*'
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch:

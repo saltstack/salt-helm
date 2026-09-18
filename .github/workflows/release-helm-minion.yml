@@ -3,7 +3,7 @@ name: Release Helm - Salt Minion
 on:
   push:
     tags:
-      - 'chart-minion-v*'
+      - 'chart-salt-minion-v*'
   schedule:
     - cron: '0 7 * * 1'
   workflow_dispatch:
