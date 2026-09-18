@@ -1,0 +1,83 @@
+name: Release Docker - Salt Key Operator
+
+on:
+  push:
+    tags:
+      - 'operator-v*'
+  schedule:
+    - cron: '0 5 * * 1' # Every Monday at 5:00 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-scan-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      - name: Extract Dynamic Version Metadata
+        id: vars
+        run: |
+          if [[ "\${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME=\${GITHUB_REF#refs/tags/}
+            VERSION=\${TAG_NAME#operator-v}
+            echo "is_tag=true" >> \$GITHUB_OUTPUT
+          else
+            VERSION="latest"
+            echo "is_tag=false" >> \$GITHUB_OUTPUT
+          fi
+          echo "version=VERSION" >> GITHUB_OUTPUT
+          IMAGE_REF="ghcr.io/\${{ github.repository_owner }}/salt-key-operator"
+          echo "image_ref=\({IMAGE_REF,,}" >> \)GITHUB_OUTPUT
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: \${{ github.actor }}
+          password: \${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Container Image Locally
+        uses: docker/build-push-action@v6
+        with:
+          context: ./salt-key-operator
+          load: true
+          tags: |
+            \({{ steps.vars.outputs.image_ref }}:\){{ steps.vars.outputs.version }}
+
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: '\({{ steps.vars.outputs.image_ref }}:\){{ steps.vars.outputs.version }}'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'HIGH,CRITICAL'
+
+      - name: Push Safe Container Image to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: ./salt-key-operator
+          push: true
+          tags: |
+            \${{ steps.vars.outputs.image_ref }}:\({{ steps.vars.outputs.version }}\){{ steps.vars.outputs.image_ref }}:latest
+
+      - name: Create GitHub Release
+        if: steps.vars.outputs.is_tag == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: \${{ github.ref_name }}
+          name: "Salt Key Operator Docker Release v\${{ steps.vars.outputs.version }}"
+          body: |
+            Automated Docker release for **Salt Key Operator**.
+            Available at: `ghcr.io/${{ github.repository_owner }}/salt-key-operator:${{ steps.vars.outputs.version }}`
+          draft: false
+          prerelease: false
+

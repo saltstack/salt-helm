@@ -1,0 +1,75 @@
+name: Release Helm - Salt Key Operator
+
+on:
+  push:
+    tags:
+      - 'chart-operator-v*'
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release-helm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+
+      - name: Extract Tag Version
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            VERSION=${TAG_NAME#chart-operator-v}
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+          else
+            VERSION="0.0.0-snapshot"
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          REGISTRY_OWNER="${{ github.repository_owner }}"
+          echo "registry_owner=${REGISTRY_OWNER,,}" >> $GITHUB_OUTPUT
+
+      - name: Log in to GHCR (Helm OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username ${{ github.actor }} \
+            --password-stdin
+
+      - name: Inject Chart Version
+        run: |
+          sed -i "s/^version:.*/version: ${{ steps.vars.outputs.version }}/g" ./charts/salt-key-operator/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.vars.outputs.version }}\"/g" ./charts/salt-key-operator/Chart.yaml
+
+      - name: Package Helm Chart
+        run: |
+          helm package ./charts/salt-key-operator --destination .dist
+
+      - name: Push Helm Chart OCI Artifact to GHCR
+        run: |
+          helm push .dist/salt-key-operator-${{ steps.vars.outputs.version }}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}
+
+      - name: Create GitHub Release
+        if: steps.vars.outputs.is_tag == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Salt Key Operator Helm Release v${{ steps.vars.outputs.version }}"
+          body: |
+            Automated Helm Chart release for **Salt Key Operator**.
+            Install with:
+            ```bash
+            helm pull oci://ghcr.io/\({{ steps.vars.outputs.registry_owner }}/salt-key-operator --version\){{ steps.vars.outputs.version }}
+            ```
+          draft: false
+          prerelease: false
+
