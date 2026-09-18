@@ -3,7 +3,7 @@ name: Release Docker - Salt Master
 on:
   push:
     tags:
-      - 'master-v*'
+      - 'salt-master-v*'
   schedule:
     - cron: '0 2 * * 1' # Every Monday at 2:00 AM UTC
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
-            VERSION=${TAG_NAME#master-v}
+            VERSION=${TAG_NAME#salt-master-v}
             echo "is_tag=true" >> $GITHUB_OUTPUT
           else
             VERSION="latest"
