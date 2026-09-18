@@ -76,17 +76,18 @@ COPY salt-extensions.txt /tmp/salt-extensions.txt
 
 # hadolint ignore=DL3013
 RUN set -eu; \
-    pip_opts=""; \
-    if [ -n "${PIP_INDEX_URL}" ]; then pip_opts="${pip_opts} --index-url ${PIP_INDEX_URL}"; fi; \
-    if [ -n "${PIP_TRUSTED_HOST}" ]; then pip_opts="${pip_opts} --trusted-host ${PIP_TRUSTED_HOST}"; fi; \
-    if [ -n "${PIP_ONLY_BINARY}" ]; then pip_opts="${pip_opts} --only-binary ${PIP_ONLY_BINARY}"; fi; \
+    # Create an array or space-separated option evaluator safely
+    if [ -n "${PIP_INDEX_URL}" ]; then set -- "$@" --index-url "${PIP_INDEX_URL}"; fi; \
+    if [ -n "${PIP_TRUSTED_HOST}" ]; then set -- "$@" --trusted-host "${PIP_TRUSTED_HOST}"; fi; \
+    if [ -n "${PIP_ONLY_BINARY}" ]; then set -- "$@" --only-binary "${PIP_ONLY_BINARY}"; fi; \
     \
     echo "Installing extensions from salt-extensions.txt using salt-pip..."; \
-    salt-pip install --no-cache-dir "${pip_opts}" -r /tmp/salt-extensions.txt; \
+    salt-pip install --no-cache-dir "$@" -r /tmp/salt-extensions.txt; \
     \
     if [ -n "${EXTRA_SALT_EXTENSIONS}" ]; then \
         echo "Installing additional runtime extensions..."; \
-        salt-pip install --no-cache-dir "${pip_opts}" ${EXTRA_SALT_EXTENSIONS}; \
+        # hadolint ignore=SC2086
+        salt-pip install --no-cache-dir "$@" ${EXTRA_SALT_EXTENSIONS}; \
     fi; \
     rm -f /tmp/salt-extensions.txt
 
