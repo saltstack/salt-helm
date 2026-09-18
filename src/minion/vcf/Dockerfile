@@ -82,11 +82,11 @@ RUN set -eu; \
     if [ -n "${PIP_ONLY_BINARY}" ]; then pip_opts="${pip_opts} --only-binary ${PIP_ONLY_BINARY}"; fi; \
     \
     echo "Installing extensions from salt-extensions.txt using salt-pip..."; \
-    salt-pip install --no-cache-dir ${pip_opts} -r /tmp/salt-extensions.txt; \
+    salt-pip install --no-cache-dir "${pip_opts}" -r /tmp/salt-extensions.txt; \
     \
     if [ -n "${EXTRA_SALT_EXTENSIONS}" ]; then \
         echo "Installing additional runtime extensions..."; \
-        salt-pip install --no-cache-dir ${pip_opts} ${EXTRA_SALT_EXTENSIONS}; \
+        salt-pip install --no-cache-dir "${pip_opts}" ${EXTRA_SALT_EXTENSIONS}; \
     fi; \
     rm -f /tmp/salt-extensions.txt
 
