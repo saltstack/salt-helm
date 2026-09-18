@@ -1,0 +1,149 @@
+# yamllint disable rule:trailing-spaces
+# yamllint disable rule:comments
+# yamllint disable rule:brackets
+---
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+# Grants permissions to write container packages and update repository pages/contents
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  # ==========================================
+  # JOB 1: CODEBASE LINTING & VALIDATION
+  # ==========================================
+  lint:
+    name: Code Quality & Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 1. Lint the repository YAML files (including this workflow)
+      - name: Lint YAML Files
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: .
+          config_file: .yamllint
+
+      # 2. Lint the Dockerfiles to catch security bugs and bad practices
+      - name: Lint Dockerfiles (Hadolint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          recursive: true
+          dockerfile: "**/Dockerfile"
+
+      # 3. Install and run Helm Chart testing/linting tools
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Set up Python (Required for Chart Testing)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Set up Chart Testing
+        uses: helm/chart-testing-action@v2.6.1
+
+      - name: Run Helm Lint
+        run: ct lint --target-charts helm/salt-master,helm/salt-minion,helm/salt-key-operator
+
+  # ==========================================
+  # JOB 2: DOCKER IMAGE BUILD & PUSH (GHCR)
+  # ==========================================
+  build-and-push-images:
+    name: Build & Push Images to GHCR
+    needs: lint
+    runs-on: ubuntu-latest
+    # Only push the images when code is merged into the main branch
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: salt-master
+            src_path: ./src/master
+          - component: salt-minion
+            src_path: ./src/minion
+          - component: salt-key-operator
+            src_path: ./src/operator/salt-key-operator
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} 
+
+      - name: Extract Metadata (Tags, Labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.component }}
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest
+
+      - name: Build and Push Components
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.src_path }}
+          file: ${{ matrix.src_path }}/Dockerfile
+          push: true
+          tags: ${{ id.meta.outputs.tags }}
+          labels: ${{ id.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==========================================
+  # JOB 3: HELM CHART PACKAGE & RELEASE
+  # ==========================================
+  release-helm-charts:
+    name: Package & Release Helm Charts
+    needs: lint
+    runs-on: ubuntu-latest
+    # Only publish charts when code is merged into the main branch
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to cleanly generate chart release notes
+
+      - name: Configure Git User Info
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      # Replaces the 3 redundant chart release files with a single automated step.
+      # This reads the 'helm/' folder, builds packages, and pushes them to a 'gh-pages' branch
+      - name: Run Chart Releaser
+        uses: helm/chart-releaser-action@v1.6.0
+        with:
+          charts_dir: helm
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
