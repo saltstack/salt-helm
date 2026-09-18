@@ -47,7 +47,7 @@ jobs:
       - name: Build Container Image Locally
         uses: docker/build-push-action@v6
         with:
-          context: ./minion/kubernetes
+          context: src/minion/kubernetes
           load: true
           tags: |
             ${{ steps.vars.outputs.image_ref }}:${{ steps.vars.outputs.version }}
@@ -65,7 +65,7 @@ jobs:
       - name: Push Safe Container Image to GHCR
         uses: docker/build-push-action@v6
         with:
-          context: ./minion/kubernetes
+          context: src/minion/kubernetes
           push: true
           tags: |
             ${{ steps.vars.outputs.image_ref }}:${{ steps.vars.outputs.version }}
