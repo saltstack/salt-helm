@@ -60,19 +60,19 @@ jobs:
 
       - name: Push Helm Chart OCI Artifact to GHCR
         run: |
-          helm push .dist/salt-key-operator-${CLEAN_VERSION}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-key-operator
+          helm push .dist/salt-key-operator-${{env.CLEAN_VERSION}}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-key-operator
 
       - name: Create GitHub Release
         if: steps.vars.outputs.is_tag == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "Salt Key Operator Helm Release v${CLEAN_VERSION}"
+          name: "Salt Key Operator Helm Release v${{env.CLEAN_VERSION}}"
           body: |
             Automated Helm Chart release for **Salt Key Operator**.
             Install with:
             ```bash
-            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-key-operator --version ${CLEAN_VERSION}
+            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-key-operator --version ${{env.CLEAN_VERSION}}
             ```
           draft: false
           prerelease: false
