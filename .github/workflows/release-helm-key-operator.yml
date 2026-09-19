@@ -61,7 +61,7 @@ jobs:
 
       - name: Push Helm Chart OCI Artifact to GHCR
         run: |
-          helm push .dist/chart-salt-key-operator-${{env.CLEAN_VERSION}}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}//helm
+          helm push .dist/salt-key-operator-${{env.CLEAN_VERSION}}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}//helm
 
       - name: Create GitHub Release
         if: steps.vars.outputs.is_tag == 'true'
