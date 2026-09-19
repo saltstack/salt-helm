@@ -1,5 +1,5 @@
 apiVersion: v2
-name: salt-minion-chart
+name: chart-salt-minion
 description: >
   Installs Salt minion Deployment and supporting configurations.
 type: application
