@@ -60,7 +60,7 @@ jobs:
 
       - name: Push Helm Chart OCI Artifact to GHCR
         run: |
-          helm push .dist/salt-master-${CLEAN_VERSION}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-master
+          helm push .dist/salt-master-${CLEAN_VERSION}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/helm
 
       - name: Create GitHub Release
         if: steps.vars.outputs.is_tag == 'true'
@@ -72,7 +72,7 @@ jobs:
             Automated Helm Chart release for **Salt Master**.
             Install with:
             ```bash
-            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-master --version ${CLEAN_VERSION}
+            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/helm/salt-master --version ${CLEAN_VERSION}
             ```
           draft: false
           prerelease: false
