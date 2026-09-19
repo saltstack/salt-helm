@@ -47,8 +47,11 @@ jobs:
 
       - name: Inject Chart Version
         run: |
-          sed -i "s/^version:.*/version: ${{ steps.vars.outputs.version }}/g" helm/salt-master/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.vars.outputs.version }}\"/g" helm/salt-master/Chart.yaml
+          # Ensure ONLY the clean numeric semver (e.g., 0.1.0) is injected
+          CLEAN_VERSION=$(echo "${{ steps.vars.outputs.version }}" | sed 's/^v//')
+          
+          sed -i "s/^version:.*/version: ${CLEAN_VERSION}/g" helm/salt-master/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${CLEAN_VERSION}\"/g" helm/salt-master/Chart.yaml
 
       - name: Package Helm Chart
         run: |
@@ -56,19 +59,19 @@ jobs:
 
       - name: Push Helm Chart OCI Artifact to GHCR
         run: |
-          helm push .dist/salt-master-${{ steps.vars.outputs.version }}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-master
+          helm push .dist/salt-master-${CLEAN_VERSION}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-master
 
       - name: Create GitHub Release
         if: steps.vars.outputs.is_tag == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "Salt Master Helm Release v${{ steps.vars.outputs.version }}"
+          name: "Salt Master Helm Release v${CLEAN_VERSION}"
           body: |
             Automated Helm Chart release for **Salt Master**.
             Install with:
             ```bash
-            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-master --version ${{ steps.vars.outputs.version }}
+            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-master --version ${CLEAN_VERSION}
             ```
           draft: false
           prerelease: false
