@@ -56,7 +56,8 @@ jobs:
 
       - name: Package Helm Chart
         run: |
-          helm package helm/salt-minion --destination .dist
+          helm package helm/salt-minion --destination .dist --annotation "org.opencontainers.image.source=https://github.com{{ github.repository }}"
+
 
       - name: Push Helm Chart OCI Artifact to GHCR
         run: |
