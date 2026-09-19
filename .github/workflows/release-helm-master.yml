@@ -54,6 +54,10 @@ jobs:
           sed -i "s/^appVersion:.*/appVersion: \"${CLEAN_VERSION}\"/g" helm/salt-master/Chart.yaml
           echo "CLEAN_VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
           
+      - name: Build salt-master dependencies
+        run: |
+          helm dependency build helm/salt-master
+
       - name: Package Helm Chart
         run: |
           helm package helm/salt-master --destination .dist
