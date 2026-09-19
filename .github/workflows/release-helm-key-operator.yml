@@ -52,7 +52,8 @@ jobs:
           
           sed -i "s/^version:.*/version: ${CLEAN_VERSION}/g" helm/salt-minion/Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: \"${CLEAN_VERSION}\"/g" helm/salt-minion/Chart.yaml
-
+          
+          echo "CLEAN_VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
 
       - name: Package Helm Chart
         run: |
