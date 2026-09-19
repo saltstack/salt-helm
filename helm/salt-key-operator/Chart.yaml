@@ -1,5 +1,5 @@
 apiVersion: v2
-name: chart-salt-key-operator
+name: salt-key-operator
 description: >
   Installs the SaltMinionKey CRD and its controller - the declarative
   replacement for running `salt-key -a <minionId>` by hand against a
