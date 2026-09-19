@@ -48,7 +48,7 @@ jobs:
       - name: Inject Chart Version
         run: |
           # Ensure ONLY the clean numeric semver (e.g., 0.1.0) is injected
-          CLEAN_VERSION=$(echo "${{ steps.vars.outputs.version }}" | sed 's/^v//')
+          CLEAN_VERSION=$(echo "${{ steps.vars.outputs.version }}" | sed -E 's/.*-v?([0-9]+\.[0-9]+\.[0-9]+.*)/\1/')
           
           sed -i "s/^version:.*/version: ${CLEAN_VERSION}/g" helm/salt-minion/Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: \"${CLEAN_VERSION}\"/g" helm/salt-minion/Chart.yaml
