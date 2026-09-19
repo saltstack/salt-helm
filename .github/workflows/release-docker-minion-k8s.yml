@@ -37,7 +37,7 @@ jobs:
             echo "is_tag=false" >> $GITHUB_OUTPUT
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          IMAGE_REF="ghcr.io/${{ github.repository_owner }}/salt-minion-k8s"
+          IMAGE_REF="ghcr.io/${{ github.repository_owner }}/salt-minion"
           echo "image_ref=${IMAGE_REF,,}" >> $GITHUB_OUTPUT
 
       - name: Log in to GHCR
