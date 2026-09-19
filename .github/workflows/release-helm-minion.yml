@@ -60,7 +60,7 @@ jobs:
 
       - name: Push Helm Chart OCI Artifact to GHCR
         run: |
-          helm push .dist/salt-minion-${{env.CLEAN_VERSION}}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}//helm
+          helm push .dist/salt-minion-${{env.CLEAN_VERSION}}.tgz oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}
 
       - name: Create GitHub Release
         if: steps.vars.outputs.is_tag == 'true'
@@ -72,7 +72,7 @@ jobs:
             Automated Helm Chart release for **Salt Minion**.
             Install with:
             ```bash
-            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/helm/salt-minion --version ${{env.CLEAN_VERSION}}
+            helm pull oci://ghcr.io/${{ steps.vars.outputs.registry_owner }}/chart-salt-minion --version ${{env.CLEAN_VERSION}}
             ```
           draft: false
           prerelease: false
