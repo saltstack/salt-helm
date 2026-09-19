@@ -86,7 +86,7 @@ jobs:
           name: "Salt Minion K8s Docker Release v${{ steps.vars.outputs.version }}"
           body: |
             Automated Docker release for **Salt Minion K8s**.
-            Available at: `ghcr.io/${{ github.repository_owner }}/salt-minion-k8s:${{ steps.vars.outputs.version }}`
+            Available at: `ghcr.io/${{ github.repository_owner }}/salt-minion:${{ steps.vars.outputs.version }}`
           draft: false
           prerelease: false
 
